@@ -7,6 +7,8 @@
 #include "sim/sim.h"
 #include "sim/sim_priv.h"
 #include "sim/sim_stubs.h"
+#include "enhanced/enh_canvas.h"   /* ENH: */
+#include "enhanced/hr.h"           /* ENH: */
 
 #define LONG(o) ((s32)DSL(o))
 
@@ -59,6 +61,7 @@ void r3d_project_point(int x_u, int y_u, int z)
     int lim = DSW(0x365E) == 0 ? 0xC7 : 0x60;
     if (sy < 0 || sy > lim) { DSW(0x9500) = (u16)sx; sx = (s16)0xFFFF; }
     DSW(0x49E0) = (u16)sx;
+    if (enh_shadow_on) hr_project_point(X, Y, Z, sx != (s16)0xFFFF);   /* ENH: the hr point (S3.1 emitters) */
 }
 
 /* ------------------------------------------------------------------------------------------------------------------------- HUD symbology helpers */

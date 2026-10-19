@@ -1,6 +1,7 @@
 /* The Enhanced options (see enhanced.h). */
 #include "enhanced.h"
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -20,7 +21,7 @@ bool enh_canvas_on(void) { return !enh.classic && enh.canvas && !env_classic(); 
 int enh_parse_arg(int argc, char **argv, int i)
 {
     if (!strcmp(argv[i], "--classic")) {              /* every enhancement off, whatever else is on the command line */
-        enh.classic = true; enh.canvas = false; enh.wide = false; enh.render_scale = 0;
+        enh.classic = true; enh.canvas = false; enh.wide = false; enh.render_scale = 0; enh.dither_fine = false; enh.hr_check = false;
         return 1;
     }
     if (!strcmp(argv[i], "--render-scale") && i + 1 < argc) {
@@ -31,5 +32,32 @@ int enh_parse_arg(int argc, char **argv, int i)
     if (!strcmp(argv[i], "--wide")) { if (!enh.classic) enh.wide = true; return 1; }
     if (!strcmp(argv[i], "--no-wide")) { enh.wide = false; return 1; }
     if (!strcmp(argv[i], "--compose-test")) { enh.compose_test = true; return 1; }
+    if (!strcmp(argv[i], "--dither") && i + 1 < argc) {
+        if (!strcmp(argv[i + 1], "fine")) enh.dither_fine = !enh.classic;
+        else if (!strcmp(argv[i + 1], "grid")) enh.dither_fine = false;
+        else return 0;
+        return 2;
+    }
+    if (!strcmp(argv[i], "--hr-check")) { if (!enh.classic) enh.hr_check = true; return 1; }
     return 0;
+}
+
+void enh_env_args(void)
+{
+    static bool done;
+    if (done) return;
+    done = true;
+    const char *e = getenv("F117_ENH_ARGS");
+    if (!e || !*e) return;
+    static char buf[512];
+    char *argv[32];
+    int argc = 0;
+    snprintf(buf, sizeof buf, "%s", e);
+    for (char *t = buf; *t && argc < 32;) {                 /* not strtok: the caller may be inside a strtok loop (simtest) */
+        while (*t == ' ' || *t == '\t') *t++ = 0;
+        if (!*t) break;
+        argv[argc++] = t;
+        while (*t && *t != ' ' && *t != '\t') t++;
+    }
+    for (int i = 0; i < argc;) { int used = enh_parse_arg(argc, argv, i); i += used ? used : 1; }
 }

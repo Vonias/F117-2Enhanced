@@ -269,6 +269,7 @@ void r3d_note_zclip_point(u16 rec)
 /* 12EF:003E poly_add_edge(rec): rasterise a clipped edge into the row tables and note the side walls */
 void r3d_poly_add_edge(u16 rec)
 {
+    ENH_HR(hr_poly_add_edge(rec));   /* ENH: */
     u16 f = ER_W(rec, 2);
     WIN->poly_flags |= f;
     u8 al = (u8)f;
@@ -315,4 +316,5 @@ void r3d_poly_finish(s16 colour)
     WIN->wall_r_lo = 0x7FFF; WIN->wall_l_lo = 0x7FFF;
     WIN->wall_r_hi = (s16)0x8000; WIN->wall_l_hi = (s16)0x8000;
     WIN->poly_drawn = 0; WIN->poly_flags = 0; WIN->zclip_n = 0;
+    ENH_HR(hr_poly_finish());   /* ENH: the same polygon at N x (colour DS:85D6) */
 }

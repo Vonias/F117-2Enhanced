@@ -183,10 +183,20 @@ endif()
 add_test(NAME compose COMMAND f117 --compose-test)
 set_tests_properties(compose PROPERTIES PASS_REGULAR_EXPRESSION "compose-test OK")
 
+# ENH: S2.2, the hr 3D back end on the render3d golden scenes, enhancements ON (port/notes/e22/r3d_hr.py): the golden frames stay byte for byte, the hr
+# 3D layer equals the 1x page at --render-scale 1 and agrees with it away from edges at 2, 3, 4. Uses the golden test's cached references.
+if(Python3_Interpreter_FOUND)
+    add_test(NAME r3d_hr_n1 COMMAND Python3::Interpreter ${CMAKE_CURRENT_SOURCE_DIR}/../port/notes/e22/r3d_hr.py
+             $<TARGET_FILE:f117> ${CMAKE_CURRENT_SOURCE_DIR}/../Game ${CMAKE_CURRENT_BINARY_DIR}/r3d_hr_n1 ${CMAKE_CURRENT_BINARY_DIR}/r3d_golden 1)
+    add_test(NAME r3d_hr_n234 COMMAND Python3::Interpreter ${CMAKE_CURRENT_SOURCE_DIR}/../port/notes/e22/r3d_hr.py
+             $<TARGET_FILE:f117> ${CMAKE_CURRENT_SOURCE_DIR}/../Game ${CMAKE_CURRENT_BINARY_DIR}/r3d_hr_n234 ${CMAKE_CURRENT_BINARY_DIR}/r3d_golden 2 3 4)
+    set_tests_properties(r3d_hr_n1 r3d_hr_n234 PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 1800 DEPENDS render3d_golden PASS_REGULAR_EXPRESSION "r3d-hr OK")
+endif()
+
 # ENH: every faithful test runs with the enhancements off (F117_CLASSIC acts as --classic for the Python drivers' own command lines).
 get_property(F117_ALL_TESTS DIRECTORY PROPERTY TESTS)
 foreach(t ${F117_ALL_TESTS})
-    if(NOT t STREQUAL "compose")
+    if(NOT t STREQUAL "compose" AND NOT t MATCHES "^r3d_hr_")
         set_property(TEST ${t} APPEND PROPERTY ENVIRONMENT F117_CLASSIC=1)
     endif()
 endforeach()

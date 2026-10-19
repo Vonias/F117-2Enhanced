@@ -222,6 +222,7 @@ static s32 proj_div(s32 n, s16 d)
 
 void r3d_project(u16 di, u16 bx)
 {
+    ENH_HR(hr_project(di, bx));   /* ENH: the hr vertex (reads di only) */
     s8 m = (s8)DSB(0x7D5E);
     if (m != 0) {
         for (int k = 0; k < 2; k++) {
@@ -368,7 +369,10 @@ u16 r3d_build_edges(u16 si)
     do {
         u8 v0 = ESB(si), v1 = ESB(si + 1);
         si = (u16)(si + 2);
-        if (DSW(0x7D2A) == 0 || (DSB((u16)(0x79D2 + v0)) & DSB((u16)(0x79D2 + v1))) != 0) r3d_make_edge(bp, (u16)(8 * v0), (u16)(8 * v1));
+        if (DSW(0x7D2A) == 0 || (DSB((u16)(0x79D2 + v0)) & DSB((u16)(0x79D2 + v1))) != 0) {
+            r3d_make_edge(bp, (u16)(8 * v0), (u16)(8 * v1));
+            ENH_HR(hr_make_edge(bp, (u16)(8 * v0), (u16)(8 * v1)));   /* ENH: the hr edge (after 0B3F: its near-plane point 7D42) */
+        }
         bp = (u16)(bp + 0x18);
     } while (--cx);
     return si;

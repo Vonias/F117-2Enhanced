@@ -7,6 +7,8 @@
 #include "mem.h"
 #include "platform/vga.h"
 #include "types.h"
+#include "enhanced/enh_canvas.h"   /* ENH: shadow records of the 3D raster */
+#include "enhanced/hr.h"           /* ENH: the hr back end (S2.2) */
 
 /* ---- the working buffers of 12EF / 1359 (spec render3d.md "DGROUP globals seen", Part 5): ONE struct over DS:8568 .. DS:9145. Several routines rely on the adjacency
  * of the arrays (the row tables are 480 words; edge_L / edge_R are 2 bytes apart from the end of the previous table), so the arrays are addressed by DS offset

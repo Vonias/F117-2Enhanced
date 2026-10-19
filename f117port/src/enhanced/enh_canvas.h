@@ -47,13 +47,24 @@ void enh_frame_to_canvas(int *x, int *y);
 /* Shadow records (mgraphic.c hooks). seg:off is the written byte of page 0 or 1; val the byte written. */
 void enh_rec_line(u16 seg, u16 off, u8 val);            /* line / pixel: a vector write (or a 3D line inside a 3D pass); call BEFORE the write */
 void enh_rec_fill(u16 seg, u16 off, u8 val);            /* polygon / sprite pixel: 3D inside a 3D pass, else plain art; call AFTER the write */
+bool enh_page_tracked(u16 seg);                         /* page 0 or page 1 (video_page_seg(1)): the pages with shadow records */
 void enh_page_cleared(u16 seg);                         /* a whole page was overwritten: its records are void */
+/* S2.2: a pixel of the faithful 3D raster (1359 spans / lines) that the hr back end mirrors: shadow only (without an open hr pass it is
+ * recorded like enh_rec_fill, its block stamped with the 1x value). Call AFTER the write. */
+void enh_rec_3d(u16 seg, u16 off, u8 val);
+void enh_rec_span3d(u16 seg, u16 off, int len);         /* the same for len page bytes from off */
+bool enh_shadow_3d(u16 off, u8 *val);                   /* the work record of off is a 3D write (its value in *val) */
+void enh_pass_clear(int x0, int y0, int x1, int y1);    /* a 3D pass opens: shadow, 3D and vector layer cleared inside its window (frame px) */
+void enh_layers_reset(void);                            /* every record and layer cleared (the render test, per scenario) */
+#define ENH_REC_3D(seg, off, val) do { if (enh_shadow_on) enh_rec_3d((seg), (u16)(off), (u8)(val)); } while (0)
+#define ENH_REC_SPAN3D(seg, off, len) do { if (enh_shadow_on) enh_rec_span3d((seg), (u16)(off), (len)); } while (0)
 void enh_flip(unsigned bytes);                          /* the page flip copied `bytes` of page 1 to page 0 */
 
 #define ENH_REC_LINE(seg, off, val) do { if (enh_shadow_on) enh_rec_line((seg), (u16)(off), (u8)(val)); } while (0)
 #define ENH_REC_FILL(seg, off, val) do { if (enh_shadow_on) enh_rec_fill((seg), (u16)(off), (u8)(val)); } while (0)
 
-/* Layers for the emitters (S2.2, S3.x): 16-bit entries, bit 8 = written, low byte = DAC index. Work = being drawn, shown = flipped. */
+/* Layers for the emitters (S2.2, S3.x): 16-bit entries, bit 8 = written, low byte = DAC index (bit 9: a stamped 1x value, see
+ * enh_rec_fill). Work = being drawn, shown = flipped. */
 u16 *enh_layer3d(void);
 u16 *enh_layer_vec(void);
 

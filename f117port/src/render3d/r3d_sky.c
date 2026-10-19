@@ -41,7 +41,7 @@ void r3d_draw_sky_ground(void *ctx)
     DSW(0x98E4) = DSW(0x498C);
     DSW(0x98F8) = DSW(0x4986);
     DSW(0x9F12) = DSW(0x4988);
-    if ((s8)DSB(0x98DE) < 3) { hz_fill_far(((u8 *)ctx)[4] | ((u8 *)ctx)[5] << 8); return; }
+    if ((s8)DSB(0x98DE) < 3) { hz_fill_far(((u8 *)ctx)[4] | ((u8 *)ctx)[5] << 8); ENH_HR(hr_sky_ground(ctx)); return; }   /* ENH: the hr backdrop */
     bool flag = DSW(0x4360) && DSW(0x43B2);
     for (int i = 0; i < 16; i++) DSW(0xC080 + 2 * i) = DSW(0x0D22 + 2 * i);          /* the sky offsets (initialised data) */
     s16 cB = (s16)DSW(0x4988);
@@ -57,4 +57,5 @@ void r3d_draw_sky_ground(void *ctx)
     for (int i = 1; i < 16; i++) DSW(0xC080 + 2 * i) = (u16)((u16)(alt / ((16 - i) << 5)) - c0);
     DSW(0xC080) = 0;
     bands(ctx, H, true, flag);
+    ENH_HR(hr_sky_ground(ctx));   /* ENH: the hr backdrop, over the 1x one */
 }

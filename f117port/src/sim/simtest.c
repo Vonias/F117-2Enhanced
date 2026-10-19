@@ -17,6 +17,7 @@
 #include <string.h>
 
 #include "prog.h"
+#include "enhanced/hr.h"   /* ENH: --hr-check */
 #include "gen/module_render3d.h"
 #include "sim/sim.h"
 #include "sim/sim_priv.h"
@@ -420,6 +421,7 @@ static int run_scenarios(const char *dir)
             Snap *s = get_snap(dir, tok[2]);
             if (!s) { printf("sim-test: snapshot %s missing\n", tok[2]); bad++; continue; }
             restore_snap(s);
+            enh_hr_test_begin();   /* ENH: --hr-check */
             kbd_flush();
             hash = 0;
             ncalls = 0;
@@ -451,6 +453,7 @@ static int run_scenarios(const char *dir)
             if (c->ret) hash = (hash * 31 + ((u32)r & 0xFFFF)) & 0xFFFF;
             ncalls++;
         } else if (!strcmp(tok[0], "end")) {
+            enh_hr_test_end(dir, cur_id);   /* ENH: --hr-check */
             fwrite(&magic, 4, 1, out);
             u16 r16[2] = { (u16)hash, (u16)ncalls };
             fwrite(r16, 2, 2, out);

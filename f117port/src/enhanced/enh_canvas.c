@@ -5,7 +5,9 @@
 #include <string.h>
 
 #include "enhanced/enhanced.h"
+#include "enhanced/hr.h"
 #include "platform/vga.h"
+#include "video/video.h"
 
 #define PAGE_PIXELS 64000
 #define MAX_SIDE 8192
@@ -114,7 +116,20 @@ bool enh_canvas_update(int win_w, int win_h, bool aspect43)
 
 /* ---------------------------------------------------------------- shadow records (2.5) */
 
-static bool rec_ok(u16 seg, u16 off) { return off < PAGE_PIXELS && (seg == 0xA000 || seg == 0xA400); }
+/* the pages the shadow follows: page 0 (A000) and page 1, the back page (S2.2: in the game page 1 is a DOS block, gfx_alloc(1), not A400) */
+bool enh_page_tracked(u16 seg) { return seg == 0xA000 || (seg != 0 && seg == video_page_seg(1)); }
+static bool rec_ok(u16 seg, u16 off) { return off < PAGE_PIXELS && enh_page_tracked(seg); }
+
+/* a 1x write inside a 3D pass that the hr back end does not mirror (sprites, dots, the 1001 fills before the hr backdrop) shows as its
+ * original pixel: its block of the 3D layer gets the value (bit 9 marks it, for --hr-check); a later hr write replaces it */
+static void stamp3d(u16 seg, u16 off, u8 val)
+{
+    if (!l3d_work || (enh_hr.on && seg != enh_hr.seg)) return;   /* the other page during an hr pass (the TV camera's backdrop): not this layer */
+    int x = off % 320, y = off / 320, n = enh_cv.n;
+    u16 *p = l3d_work + (size_t)(enh_cv.fy + y * n) * enh_cv.lw + (size_t)(enh_cv.fx + x * n);
+    for (int ky = 0; ky < n; ky++, p += enh_cv.lw)
+        for (int kx = 0; kx < n; kx++) p[kx] = (u16)(0x300 | val);
+}
 
 static void vec_clear_block(u16 off)
 {
@@ -128,8 +143,8 @@ void enh_rec_line(u16 seg, u16 off, u8 val)
 {
     if (!rec_ok(seg, off)) return;
     Shadow *r = &sh_work[off];
-    if (enh_route == ENH_ROUTE_3D) { r->src = SRC_3D; r->val = val; return; }
-    u8 old = vga_page(seg)[off];
+    if (enh_route == ENH_ROUTE_3D) { r->src = SRC_3D; r->val = val; stamp3d(seg, off, val); return; }
+    u8 old = seg_ptr(seg)[off];
     bool fresh = r->src != SRC_NONE && old == r->val;
     if (!fresh) vec_clear_block(off);
     if (r->src == SRC_VEC && fresh) { r->val = val; return; }       /* a line over a line keeps what was below both */
@@ -143,13 +158,61 @@ void enh_rec_fill(u16 seg, u16 off, u8 val)
 {
     if (!rec_ok(seg, off)) return;
     Shadow *r = &sh_work[off];
-    if (enh_route == ENH_ROUTE_3D) { r->src = SRC_3D; r->val = val; }
+    if (enh_route == ENH_ROUTE_3D) { r->src = SRC_3D; r->val = val; stamp3d(seg, off, val); }
     else r->src = SRC_NONE;                                          /* plain art over what was there */
+}
+
+void enh_rec_3d(u16 seg, u16 off, u8 val)
+{
+    if (!enh_hr.on) { enh_rec_fill(seg, off, val); return; }
+    if (!rec_ok(seg, off)) return;
+    sh_work[off].src = SRC_3D;
+    sh_work[off].val = val;
+}
+
+void enh_rec_span3d(u16 seg, u16 off, int len)
+{
+    if (!enh_page_tracked(seg)) return;
+    const u8 *pg = seg_ptr(seg);
+    for (int i = 0; i < len; i++) enh_rec_3d(seg, (u16)(off + i), pg[(u16)(off + i)]);
+}
+
+bool enh_shadow_3d(u16 off, u8 *val)
+{
+    if (off >= PAGE_PIXELS || sh_work[off].src != SRC_3D) return false;
+    *val = sh_work[off].val;
+    return true;
+}
+
+void enh_pass_clear(int x0, int y0, int x1, int y1)
+{
+    if (x0 < 0) x0 = 0;
+    if (y0 < 0) y0 = 0;
+    if (x1 > 319) x1 = 319;
+    if (y1 > 199) y1 = 199;
+    if (x1 < x0 || y1 < y0) return;
+    for (int y = y0; y <= y1; y++) memset(&sh_work[y * 320 + x0], 0, (size_t)(x1 - x0 + 1) * sizeof(Shadow));
+    if (!layer_px) return;
+    const int n = enh_cv.n, lw = enh_cv.lw;
+    for (int y = enh_cv.fy + n * y0; y < enh_cv.fy + n * (y1 + 1); y++) {
+        size_t at = (size_t)y * lw + (size_t)(enh_cv.fx + n * x0), cnt = (size_t)n * (size_t)(x1 - x0 + 1);
+        memset(l3d_work + at, 0, cnt * sizeof(u16));
+        memset(lvec_work + at, 0, cnt * sizeof(u16));
+    }
+}
+
+void enh_layers_reset(void)
+{
+    memset(sh_work, 0, sizeof sh_work);
+    memset(sh_shown, 0, sizeof sh_shown);
+    if (!layer_px) return;
+    memset(l3d_work, 0, layer_px * sizeof(u16)); memset(l3d_shown, 0, layer_px * sizeof(u16));
+    memset(lvec_work, 0, layer_px * sizeof(u16)); memset(lvec_shown, 0, layer_px * sizeof(u16));
 }
 
 void enh_page_cleared(u16 seg)
 {
-    if (seg != 0xA000 && seg != 0xA400) return;
+    if (!enh_page_tracked(seg)) return;
     memset(sh_work, 0, sizeof sh_work);
     if (seg == 0xA000) memset(sh_shown, 0, sizeof sh_shown);
 }

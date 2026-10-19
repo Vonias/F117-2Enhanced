@@ -37,6 +37,7 @@ void r3d_set_viewport(u16 vp)
     DSW(0xE53E) = 0x48D6; DSW(0xE544) = 0x48F6;
     if (DSB(0x294B)) { DSW(0xE53E) = 0x48E6; DSW(0xE544) = 0x4906; }
     if (DSW(0x365E)) DSW(0xE544) += 0x20;
+    if (enh_shadow_on) enh_r3d_viewport(vp);   /* ENH: opens an hr pass (route 3D, window cleared) */
 }
 
 /* 0000:DC64 r3d_set_camera_matrix: the cull matrix 498E (E26B), the model matrix 49A0 and the scaled camera matrix 7AF8 (11EB:000C) */
@@ -72,6 +73,7 @@ void r3d_end_scene(void)
     DSW(0xC04E) += (u16)(t << 3);
     DSW(0xC04C) += (u16)((t << 3) + t);
     for (int i = 0; i < 0x12; i += 2) DSW((u16)(0x49B2 + i)) = DSW((u16)(0x498E + i));
+    if (enh_shadow_on) enh_r3d_end();   /* ENH: closes the hr pass */
 }
 
 /* ------------------------------------------------------------------------------------------------ matrices */

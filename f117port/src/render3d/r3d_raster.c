@@ -162,6 +162,7 @@ void r3d_fill_M(void)
         while (spans_next(&sp, &base, &l, &r)) {
             si_row = (u16)(sp.si - 2);
             for (int x = l; x <= r; x++) page[(u16)(base + x)] = ((x ^ (si_row >> 1)) & 1) ? ah : al;
+            ENH_REC_SPAN3D(DSW(0x85EA), base + l, r - l + 1);   /* ENH: shadow record */
         }
     } else if (ah == 0xFE || ah == 0xFD) {
         if (!spans_begin(&sp, false)) return;
@@ -169,6 +170,7 @@ void r3d_fill_M(void)
             for (int x = l; x <= r; x++) {
                 u16 o = (u16)(base + x);
                 page[o] = ah == 0xFE ? (u8)(page[o] & al) : (u8)(page[o] | al);
+                ENH_REC_3D(DSW(0x85EA), o, page[o]);   /* ENH: shadow record */
             }
     } else if (ah == 0xFC) {
         if (!spans_begin(&sp, true)) return;
@@ -176,6 +178,7 @@ void r3d_fill_M(void)
             si_row = (u16)(sp.si - 2);
             for (int x = l; x <= r; x++)
                 if ((x ^ (si_row >> 1)) & 1) page[(u16)(base + x)] = al;
+            ENH_REC_SPAN3D(DSW(0x85EA), base + l, r - l + 1);   /* ENH: shadow record */
         }
     } else {                                                /* FBh: clear only */
         if (!spans_begin(&sp, false)) return;
@@ -186,6 +189,7 @@ void r3d_fill_M(void)
 /* 1359:045D line_M(rec): a Bresenham line between the clipped ends rec+0,+4 and rec+8,+0C in the byte colour DS:85D6, both ends drawn (error starts at -(n >> 1), a tie steps) */
 void r3d_line_M(u16 rec)
 {
+    ENH_HR(hr_line(rec));   /* ENH: the hr line */
     s16 bx = ER_S(rec, 0), di = ER_S(rec, 4), bp = ER_S(rec, 8), cx = ER_S(rec, 0xC), t;
     u16 ady = (u16)(cx - di), adx = (u16)(bp - bx);
     if ((s16)ady < 0) ady = (u16)-ady;
@@ -201,6 +205,7 @@ void r3d_line_M(u16 rec)
         err = (u16)-(n >> 1);
         for (;;) {
             page[o] = c;
+            ENH_REC_3D(DSW(0x85EA), o, c);   /* ENH: shadow record */
             o++;
             err = (u16)(err + ady);
             if (!(err & 0x8000)) { o = (u16)(o + step); err = (u16)(err - adx); }
@@ -214,6 +219,7 @@ void r3d_line_M(u16 rec)
         err = (u16)-(n >> 1);
         for (;;) {
             page[o] = c;
+            ENH_REC_3D(DSW(0x85EA), o, c);   /* ENH: shadow record */
             o = (u16)(o + 320);
             err = (u16)(err + adx);
             if (!(err & 0x8000)) { o = (u16)(o + step); err = (u16)(err - ady); }
