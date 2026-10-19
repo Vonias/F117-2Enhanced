@@ -290,11 +290,11 @@ change must be limited to the 3D route; some HUD consumer might use `[49E0]` as 
 step (100 ms at 10 steps/s); 15 steps/s (U3-2 alternative) halves the step error.
 
 Questions (defaults apply if unanswered):
-* Q1 left/right/rear views: default **fit** (the whole picture, black side bars); alternative **cover** (fill the window, crop top/bottom).
+* Q1 (decided 2026-10-19: fit the window's height) left/right/rear views: default **fit** (the whole picture, black side bars); alternative **cover** (fill the window, crop top/bottom).
 * Q2 dither: default original-pixel checkerboard; alternative fine (per layer pixel, smoother tone).
 * Q3 line width at N×: default `max(1, N/2)` layer pixels; alternative always 1.
-* Q4 front cockpit: default the world also beside the instrument panel; alternative black side strips below the window line.
-* Q5 (U3-2) sim step rate: default 10/s (Game speed 7); alternative 15/s.
+* Q4 (decided 2026-10-19: the world beside the panel) front cockpit: default the world also beside the instrument panel; alternative black side strips below the window line.
+* Q5 (decided 2026-10-19: 10/s) (U3-2) sim step rate: default 10/s (Game speed 7); alternative 15/s.
 
 Plan changes (applied to PLAN.md, ids kept): the wider view needs the sandboxed display pass before Phase 4, so the sandbox
 becomes its own foundation **S2.4 (O, M)**; S4.1 shrinks to the loop, alpha and the own-aircraft/camera lerp (**O, M**, was L);

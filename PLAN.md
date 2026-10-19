@@ -22,7 +22,7 @@ remove it when it is done.
 
 | Task | What to do | For | Time |
 |---|---|---|---|
-| U3 | `DESIGN.md` section 6 questions Q1–Q5 (left/right/rear fit or cover, dither, line width, world beside the panel, sim step rate 10 or 15/s) and U3 item 5; defaults apply if unanswered | S2.1 | 5 min |
+| U3 | `DESIGN.md` Q2 (dither: original grid or fine) and Q3 (HUD line width at N×: N/2 or 1): compare `work/examples/q2_q3_examples.png` and reply A or B for each; defaults (A) apply if unanswered | S2.1 | 2 min |
 
 ## Status
 
@@ -142,6 +142,11 @@ Several bugs in one message; one session then fixes them in a batch.
 
 ## Decisions
 (Settled answers from U3 go here, dated.)
+- 2026-10-19, DESIGN.md Q1: the left, right and rear views are scaled to **fit the window's height** (the whole
+  picture, top to bottom; black bars at the sides of a wide window).
+- 2026-10-19, DESIGN.md Q4: in the front cockpit view the world is also shown beside the instrument panel (default kept).
+- 2026-10-19, DESIGN.md Q5 / U3 item 2: the sim runs at 10 steps a second (Game speed 7, the faithful pacing); the
+  display is interpolated to the monitor rate.
 - 2026-10-19, U3 item 4 (wider view): keep the original cockpit art in place and unchanged, and extend the 3D view
   to the left, right and top, so a wide or tall window shows more of the world around the cockpit (S3.4). The original
   320x200 picture stays available with `--classic`.
