@@ -22,7 +22,6 @@ remove it when it is done.
 
 | Task | What to do | For | Time |
 |---|---|---|---|
-| U3 | `DESIGN.md` Q2 (dither: original grid or fine) and Q3 (HUD line width at N×: N/2 or 1): compare `work/examples/q2_q3_examples.png` and reply A or B for each; defaults (A) apply if unanswered | S2.1 | 2 min |
 
 ## Status
 
@@ -77,6 +76,9 @@ picture scaled up to fill; full-screen 3D, outside and map: extended), per Decis
 | S2.2 | render3d at N×: the hr back end (`hr_clip/hr_raster/hr_edge2d` copies) fed by hooks in projection, edges, clipper, spans, sky and 1001; rule R1; N=1 byte-identical (DESIGN 2.2–2.4) | O | L | |
 | S2.3 | Tests: the faithful suite in `--classic`; golden scenes at N=1 through the hr path; reference-rasteriser comparison at N=2/4; headless PNG and mask dumps for the user (DESIGN 5.3) | S | M | |
 | S2.4 | Sandboxed display pass: snapshot/restore of mem, VGA model, driver statics and layers; sound/wait suppression; `enh_frame_begin`/`enh_idle` hooks; the sandbox hash ctest (DESIGN 4.2) | O | M | |
+
+Notes:
+- S2.2 implements both dither modes (`--dither grid|fine`, Decisions 2026-10-19); S2.3 shows them to the user (U1).
 
 ### Phase 3 — Visible features (resolution)
 | Id | Task | Model | Size | Status |
@@ -142,6 +144,9 @@ Several bugs in one message; one session then fixes them in a batch.
 
 ## Decisions
 (Settled answers from U3 go here, dated.)
+- 2026-10-19, DESIGN.md Q3: HUD and vector lines at N× are `max(1, N/2)` layer pixels wide (the default).
+- 2026-10-19, DESIGN.md Q2 (dither) is decided after seeing it in the game: S2.2 implements both (`--dither grid`, the
+  default, and `--dither fine`), and S2.3 writes the same real scenes with both as PNGs and adds a U1 row asking the user.
 - 2026-10-19, DESIGN.md Q1: the left, right and rear views are scaled to **fit the window's height** (the whole
   picture, top to bottom; black bars at the sides of a wide window).
 - 2026-10-19, DESIGN.md Q4: in the front cockpit view the world is also shown beside the instrument panel (default kept).

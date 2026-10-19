@@ -291,8 +291,8 @@ step (100 ms at 10 steps/s); 15 steps/s (U3-2 alternative) halves the step error
 
 Questions (defaults apply if unanswered):
 * Q1 (decided 2026-10-19: fit the window's height) left/right/rear views: default **fit** (the whole picture, black side bars); alternative **cover** (fill the window, crop top/bottom).
-* Q2 dither: default original-pixel checkerboard; alternative fine (per layer pixel, smoother tone).
-* Q3 line width at N×: default `max(1, N/2)` layer pixels; alternative always 1.
+* Q2 (decided after seeing it in the game: both modes built, S2.3 shows them) dither: default original-pixel checkerboard; alternative fine (per layer pixel, smoother tone).
+* Q3 (decided 2026-10-19: max(1, N/2)) line width at N×: default `max(1, N/2)` layer pixels; alternative always 1.
 * Q4 (decided 2026-10-19: the world beside the panel) front cockpit: default the world also beside the instrument panel; alternative black side strips below the window line.
 * Q5 (decided 2026-10-19: 10/s) (U3-2) sim step rate: default 10/s (Game speed 7); alternative 15/s.
 
