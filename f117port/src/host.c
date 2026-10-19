@@ -15,6 +15,8 @@
 #endif
 
 #include "opl3.h"
+#include "enhanced/enh_canvas.h"   /* ENH: the canvas */
+#include "enhanced/enhanced.h"
 
 #define OPL_RATE 49716u                /* Nuked-OPL3 native rate; SDL resamples */
 
@@ -34,12 +36,28 @@ static void (*kbd_handler)(u8);
 static void (*focus_lost_handler)(void);
 static void (*mouse_handler)(int, int, u8);
 static bool (*frame_source)(u32 *);
-static u32 frame[HOST_FRAME_MAX_W * HOST_FRAME_MAX_H];
+static u32 *frame;                               /* ENH: dynamic, so the canvas can be larger than 640 x 400 */
+static size_t frame_cap;
 static int frame_w = 320, frame_h = 200;
+static int nominal_w = 960, nominal_h = 720;     /* ENH: the window size a headless run pretends to have */
 
 /* Logical presentation: frame width x 3/4 of it (4:3, as on a VGA monitor) or square pixels. */
 static int view_w(void) { return frame_w; }
-static int view_h(void) { return aspect43 ? frame_w * 3 / 4 : frame_h; }
+static int view_h(void)
+{
+    if (enh_canvas_active()) return aspect43 ? frame_h * 6 / 5 : frame_h;   /* ENH: the canvas is any size (frame_w * 3/4 for 320N x 200N) */
+    return aspect43 ? frame_w * 3 / 4 : frame_h;
+}
+
+static void frame_reserve(int w, int h)          /* ENH */
+{
+    size_t n = (size_t)w * (size_t)h;
+    if (n <= frame_cap) return;
+    free(frame);
+    frame = calloc(n, sizeof(u32));
+    if (!frame) { fprintf(stderr, "out of memory for a %d x %d frame\n", w, h); exit(3); }
+    frame_cap = n;
+}
 
 /* Tick clock: tick n is due at start + n * (359 200 / 25 175 000) s = n * 14 368 000 000 / 1007 ns (exact
  * rational arithmetic, one tick per VGA retrace, see host.h). */
@@ -56,6 +74,7 @@ static u8 mouse_buttons;
 static bool mouse_changed;
 
 static int trace = -1;
+static bool repaint;  /* the window changed size or mode: present the unchanged frame again */
 
 static void process_events(void);
 
@@ -81,6 +100,9 @@ bool host_init(const HostConfig *cfg)
     if (vd && SDL_strcasecmp(vd, "dummy") == 0) headless = true;
     game_dir = SDL_strdup(cfg->game_dir);
     aspect43 = cfg->aspect_4_3;
+    frame_reserve(HOST_FRAME_MAX_W, HOST_FRAME_MAX_H);
+    nominal_w = 320 * (cfg->scale < 1 ? 3 : cfg->scale);
+    nominal_h = (aspect43 ? 240 : 200) * (cfg->scale < 1 ? 3 : cfg->scale);
     clock_start_ns = SDL_GetTicksNS();
     ticks_run = 0;
     OPL3_Reset(&opl, OPL_RATE);                          /* the chip model exists in every mode: the sound driver writes to it, headless runs just never render it */
@@ -146,16 +168,34 @@ void host_set_kbd_handler(void (*handler)(u8)) { kbd_handler = handler; }
 void host_set_focus_lost_handler(void (*handler)(void)) { focus_lost_handler = handler; }
 void host_set_mouse_handler(void (*handler)(int, int, u8)) { mouse_handler = handler; }
 
-void host_set_frame_source(bool (*compose)(u32 *), int w, int h)
+/* ENH: sets the frame (and the texture) to w x h, any size up to the canvas limit. */
+static void host_resize_frame(int w, int h)
 {
-    frame_source = compose;
-    frame_w = SDL_clamp(w, 1, HOST_FRAME_MAX_W);
-    frame_h = SDL_clamp(h, 1, HOST_FRAME_MAX_H);
+    frame_w = w; frame_h = h;
+    frame_reserve(w, h);
     if (!renderer) return;                                /* --headless */
     SDL_SetRenderLogicalPresentation(renderer, view_w(), view_h(), SDL_LOGICAL_PRESENTATION_LETTERBOX);
     if (texture) SDL_DestroyTexture(texture);
     texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_XRGB8888, SDL_TEXTUREACCESS_STREAMING, frame_w, frame_h);
     SDL_SetTextureScaleMode(texture, SDL_SCALEMODE_NEAREST);
+}
+
+/* ENH: with the canvas on, its size follows the window (and the view): resize the frame to it before it is composed. */
+static void canvas_sync(void)
+{
+    if (!enh_canvas_active()) return;
+    int ww = nominal_w, wh = nominal_h;
+    if (window && !headless) SDL_GetWindowSizeInPixels(window, &ww, &wh);
+    enh_canvas_update(ww, wh, aspect43);
+    if (enh_cv.lw != frame_w || enh_cv.lh != frame_h) { host_resize_frame(enh_cv.lw, enh_cv.lh); repaint = true; }
+}
+
+void host_set_frame_source(bool (*compose)(u32 *), int w, int h)
+{
+    frame_source = compose;
+    frame_w = SDL_clamp(w, 1, HOST_FRAME_MAX_W);
+    frame_h = SDL_clamp(h, 1, HOST_FRAME_MAX_H);
+    host_resize_frame(frame_w, frame_h);
 }
 
 uint64_t host_ns(void) { return SDL_GetTicksNS() - clock_start_ns; }
@@ -217,6 +257,7 @@ void host_snapshot_now(const char *tag)
 {
     const char *dir = SDL_getenv("F117_SNAPSHOT_DIR");
     if (!dir) return;
+    canvas_sync();                                        /* ENH: */
     if (frame_source) frame_source(frame);
     save_snapshot(dir, tag);
 }
@@ -244,7 +285,6 @@ static void present(void)
 }
 
 static Uint64 last_present_ns;
-static bool repaint;  /* the window changed size or mode: present the unchanged frame again */
 
 /* ---------------------------------------------------------------- scripted keys (F117_KEYS) */
 
@@ -311,6 +351,7 @@ void host_pump(void)
 
     /* Present at most once per ~8 ms; VSync paces it further. */
     if (frame_source && now - last_present_ns >= 8 * SDL_NS_PER_MS) {
+        canvas_sync();                              /* ENH: the canvas follows the window */
         const bool changed = frame_source(frame);
         if (!changed) snapshot_static();
         if (changed || repaint) {
@@ -507,11 +548,13 @@ void host_mouse_read(int *x, int *y, u8 *buttons)
     float py = SDL_clamp(mouse_y, 0.0f, (float)view_h() - 1);
     if (x) *x = (int)(px * frame_w / view_w());
     if (y) *y = (int)(py * frame_h / view_h());
+    if (x && y && enh_canvas_active()) enh_canvas_to_frame(x, y);   /* ENH: canvas pixel -> 320x200 frame pixel */
     if (buttons) *buttons = mouse_buttons;
 }
 
 void host_mouse_warp(int x, int y)
 {
+    if (enh_canvas_active()) enh_frame_to_canvas(&x, &y);   /* ENH */
     mouse_x = (float)x * view_w() / frame_w;
     mouse_y = (float)y * view_h() / frame_h;
     if (window && !headless) {

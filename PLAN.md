@@ -22,11 +22,12 @@ remove it when it is done.
 
 | Task | What to do | For | Time |
 |---|---|---|---|
+| U1 · S2.1 canvas | Build, then run `f117-enhanced --render-scale 4`, and again with `--wide` in a wide window (resize it, try full screen with Alt+Enter). Look at: the menus/debrief (picture centred, black bars), the front cockpit, and the left/right/rear views. It must look exactly like the faithful port (`--classic`), only placed: with `--wide` the 320x200 picture sits bottom centre in the front view (black above and beside it: the 3D layer is empty until S2.2) and is fitted to the window height, centred, in the left/right/rear views and the menus. Nothing sharper yet; HUD lines and the 3D must be the same as `--classic`. The mouse in START must still hit the buttons. | S2.1 | 10 min |
 
 ## Status
 
-- **Done:** S0.1 (repo from the faithful port), S1.1 (`DESIGN.md`, the render and timing design).
-- **Next:** S2.1 (Sonnet): host canvas, layered compositor and shadow plane (`DESIGN.md` 2.1, 2.5, 3.1). Your tasks: **User to-do** above.
+- **Done:** S0.1 (repo from the faithful port), S1.1 (`DESIGN.md`, the render and timing design), S2.1 (canvas, compositor, shadow plane; U1 pending).
+- **Next:** S2.2 (Opus): render3d at N× (the hr back end, rule R1; `DESIGN.md` 2.2-2.4). Your tasks: **User to-do** above.
 - Escalation rule: a subtask that fails twice on Sonnet → new Opus session with a 5-line note
   (symptom, file, what was tried). Never carry an old transcript over.
 
@@ -72,12 +73,22 @@ picture scaled up to fill; full-screen 3D, outside and map: extended), per Decis
 ### Phase 2 — Foundations
 | Id | Task | Model | Size | Status |
 |---|---|---|---|---|
-| S2.1 | Host: canvas separate from 320x200 (any aspect, `--render-scale N`, `--wide`), the compositor (3D layer + vector layer + shadow plane, live DAC/CRTC) and the shadow records in `mgraphic.c`; `--classic` = today's present path (DESIGN 2.1, 2.5, 3.1) | S | M | |
+| S2.1 | Host: canvas separate from 320x200 (any aspect, `--render-scale N`, `--wide`), the compositor (3D layer + vector layer + shadow plane, live DAC/CRTC) and the shadow records in `mgraphic.c`; `--classic` = today's present path (DESIGN 2.1, 2.5, 3.1) | S | M  done 2026-10-19 · U1 pending |
 | S2.2 | render3d at N×: the hr back end (`hr_clip/hr_raster/hr_edge2d` copies) fed by hooks in projection, edges, clipper, spans, sky and 1001; rule R1; N=1 byte-identical (DESIGN 2.2–2.4) | O | L | |
 | S2.3 | Tests: the faithful suite in `--classic`; golden scenes at N=1 through the hr path; reference-rasteriser comparison at N=2/4; headless PNG and mask dumps for the user (DESIGN 5.3) | S | M | |
 | S2.4 | Sandboxed display pass: snapshot/restore of mem, VGA model, driver statics and layers; sound/wait suppression; `enh_frame_begin`/`enh_idle` hooks; the sandbox hash ctest (DESIGN 4.2) | O | M | |
 
 Notes:
+- S2.1 status: `src/enhanced/enh_canvas.[ch]` (geometry, layers, shadow plane, compositor, mouse mapping), `enh_canvas_test.c` (`--compose-test`, ctest
+  `compose`). Options: `--render-scale N` (default 0 = the largest whole multiple that fits the window), `--wide` / `--no-wide` (default off for now: the
+  extended area is black until S2.2; the default turns on with S3.4), `--classic` clears all. The canvas is on by default in mode 13h only (text mode and
+  `--classic` keep the faithful path). View placement: `view_frame` calls `enh_set_view` (0 front, 0x41-43 fit, other full); a mode set resets to the menu
+  placement; VGAME's own menus are not yet told apart (S3.x). The shadow is double-buffered with the page flip (work records move to shown in `flip()`, with the
+  layers). Layers are u16 (bit 8 = written, low byte = DAC index); a record whose layer is still empty falls back to the page value, so the empty-layer canvas is
+  the classic frame scaled N x N. Shadow hooks so far: `put_pixel`, `line`, `poly_fill`, `sprite_scaled`, `flip`, `page_load`, `clear_screen`, `clear_es`; NOT yet:
+  `hud_tick_strip` (S3.3), the clear in `r3d_set_viewport` and setting `enh_route` (S2.2). The faithful ctests run with `F117_CLASSIC=1` (set per test in
+  CMakeLists). In this repo `video_decoders`, `frontend`, `gen_symbols_current`, `gen_module_headers_current` fail for reasons unrelated to the code (no
+  `port/spec/*.md`, no `picdec`/`panlib` tools here; they look in this repo instead of `../F117-2`); `sound` skips.
 - S2.2 implements both dither modes (`--dither grid|fine`, Decisions 2026-10-19); S2.3 shows them to the user (U1).
 
 ### Phase 3 — Visible features (resolution)

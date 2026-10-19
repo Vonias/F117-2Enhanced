@@ -178,3 +178,15 @@ else()
 endif()
 
 # ENH: the launcher is not part of the setup (PLAN.md S5.1 adds one from TestDrive3Enhanced/FS1Enhanced).
+
+# ENH: S2.1, the canvas geometry and the compositor (no game files needed): with empty layers the canvas equals the classic frame scaled N x N.
+add_test(NAME compose COMMAND f117 --compose-test)
+set_tests_properties(compose PROPERTIES PASS_REGULAR_EXPRESSION "compose-test OK")
+
+# ENH: every faithful test runs with the enhancements off (F117_CLASSIC acts as --classic for the Python drivers' own command lines).
+get_property(F117_ALL_TESTS DIRECTORY PROPERTY TESTS)
+foreach(t ${F117_ALL_TESTS})
+    if(NOT t STREQUAL "compose")
+        set_property(TEST ${t} APPEND PROPERTY ENVIRONMENT F117_CLASSIC=1)
+    endif()
+endforeach()

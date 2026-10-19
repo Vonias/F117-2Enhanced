@@ -2,6 +2,7 @@
  * cockpit pieces pasted over its window. The renderer itself (03CE) is render3d's (render3d/r3d_scene.c). */
 #include <string.h>
 
+#include "enhanced/enh_canvas.h"   /* ENH: */
 #include "sim/sim.h"
 #include "sim/sim_priv.h"
 #include "sim/simtest.h"
@@ -49,6 +50,7 @@ void view_frame(void)
     z = (s16)fx_clamp_wrap((s16)DSW(0x3D70), 2, 8);
     DSW(0x3D70) = (u16)z;
     u16 mode = DSW(0xC07A);
+    if (enh_shadow_on) enh_set_view(mode);   /* ENH: canvas placement per view */
     u16 yaw = DSW(0x2DEE), pitch = DSW(0x2DF0), roll = DSW(0x2DF2);
 
     switch (mode) {

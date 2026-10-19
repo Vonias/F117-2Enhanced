@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "host.h"
+#include "enhanced/enh_canvas.h"   /* ENH: */
 
 static u8 vram[VGA_VRAM_SIZE];
 static u8 dac[256][3];
@@ -37,8 +38,50 @@ static u32 pal32(u8 i)
     return r << 16 | g << 8 | b;
 }
 
+/* Mode 13h as the hardware shows it: the page at the CRTC start address, the pel panning, the DAC. */
+void vga_compose_13(u32 *out)
+{
+    u32 pal[256];
+    for (int i = 0; i < 256; i++) pal[i] = pal32((u8)i);
+    u16 start = (u16)(crtc[0x0C] << 8 | crtc[0x0D]);
+    u16 pitch = (u16)(crtc[0x13] * 2);                   /* byte mode: offset register x 2 */
+    int pan = (attr[0x13] & 7) >> 1;                     /* 256-colour mode: 2 pel units per pixel */
+    for (int y = 0; y < 200; y++) {
+        u16 row = (u16)(start + y * pitch);
+        u32 *o = out + y * 320;
+        for (int x = 0; x < 320; x++) {
+            int c = x + pan;
+            u16 a = (u16)(row + (c >> 2));
+            o[x] = pal[vram[(u32)a * 4 + (c & 3)]];
+        }
+    }
+}
+
+/* ENH: the same addressing for the Enhanced compositor: the shown value of each pixel, and its offset in the 64000-byte page
+ * (0xFFFF when the pixel is not inside page 0 or 1), plus the live DAC. false = the screen is off or the mode is not 13h. */
+bool vga_shown_frame(u8 *idx, u16 *sidx, u32 *pal)
+{
+    for (int i = 0; i < 256; i++) pal[i] = pal32((u8)i);
+    if (mode != 0x13 || (seq[1] & 0x20)) return false;
+    u16 start = (u16)(crtc[0x0C] << 8 | crtc[0x0D]);
+    u16 pitch = (u16)(crtc[0x13] * 2);
+    int pan = (attr[0x13] & 7) >> 1;
+    for (int y = 0; y < 200; y++) {
+        u16 row = (u16)(start + y * pitch);
+        for (int x = 0; x < 320; x++) {
+            int c = x + pan;
+            u16 a = (u16)(row + (c >> 2));
+            u32 l = (u32)a * 4 + (c & 3);
+            idx[y * 320 + x] = vram[l];
+            sidx[y * 320 + x] = (l >> 16) < 2 && (l & 0xFFFF) < 64000 ? (u16)(l & 0xFFFF) : 0xFFFF;
+        }
+    }
+    return true;
+}
+
 static bool compose(u32 *xrgb)
 {
+    if (enh_canvas_active()) return enh_compose_vga(xrgb);   /* ENH: layers + shadow + live DAC/CRTC on the canvas */
     static u32 out[640 * 400];
     const size_t nbytes = (size_t)frame_w * (size_t)frame_h * sizeof(u32);
     if (mode == 0x03 && !(seq[1] & 0x20)) {
@@ -46,20 +89,7 @@ static bool compose(u32 *xrgb)
     } else if (mode != 0x13 || (seq[1] & 0x20)) {
         memset(out, 0, nbytes);                              /* other modes are not modelled: black; sequencer clocking-mode bit 5 = screen off (video.md 8) */
     } else {
-        u32 pal[256];
-        for (int i = 0; i < 256; i++) pal[i] = pal32((u8)i);
-        u16 start = (u16)(crtc[0x0C] << 8 | crtc[0x0D]);
-        u16 pitch = (u16)(crtc[0x13] * 2);                   /* byte mode: offset register x 2 */
-        int pan = (attr[0x13] & 7) >> 1;                     /* 256-colour mode: 2 pel units per pixel */
-        for (int y = 0; y < 200; y++) {
-            u16 row = (u16)(start + y * pitch);
-            u32 *o = out + y * 320;
-            for (int x = 0; x < 320; x++) {
-                int c = x + pan;
-                u16 a = (u16)(row + (c >> 2));
-                o[x] = pal[vram[(u32)a * 4 + (c & 3)]];
-            }
-        }
+        vga_compose_13(out);
     }
     if (!dirty && memcmp(out, last_frame, nbytes) == 0) return false;
     dirty = false;
@@ -80,6 +110,7 @@ void vga_init(void)
     dirty = true;
     frame_w = 640; frame_h = 400;                           /* text mode first */
     host_set_frame_source(compose, frame_w, frame_h);
+    enh_canvas_set_active(false);                           /* ENH: */
 }
 
 u8 *vga_vram(void) { return vram; }
@@ -112,6 +143,7 @@ void vga_set_mode(u8 m)
         for (int i = 0; i < 256; i++) dac[i][0] = dac[i][1] = dac[i][2] = 0;   /* PORT: default palette not modelled */
     }
     dirty = true;
+    enh_canvas_set_active(m == 0x13);                      /* ENH: the canvas compositor takes over in mode 13h */
 }
 
 void vga_set_unchained(void)

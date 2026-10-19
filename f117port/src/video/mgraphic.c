@@ -19,6 +19,7 @@
 #include <string.h>
 
 #include "gen/module_video.h"
+#include "enhanced/enh_canvas.h"   /* ENH: shadow records */
 #include "host.h"
 #include "mem.h"
 #include "platform/vga.h"
@@ -464,6 +465,7 @@ void nop_019C_12DF(void) {}                                                     
 /* ------------------------------------------------------------------ line, pixel (slots 31, 36): spec section 5 */
 static void put_pixel(u16 x, u16 y)
 {
+    ENH_REC_LINE(draw_seg, (u16)(rowoff(y) + draw_off + x), colour);   /* ENH: shadow record */
     seg_ptr(draw_seg)[(u16)(rowoff(y) + draw_off + x)] = colour;
 }
 
@@ -484,6 +486,7 @@ void line(int x1_, int y1_, int x2_, int y2_)
     u16 e = (u16)-(s16)((u16)(major + 1) >> 1);
     si = (u16)(si - 1);
     for (;;) {
+        ENH_REC_LINE(draw_seg, di, colour);   /* ENH: shadow record */
         pg[di++] = colour;
         if ((s16)(--cx) < 0) break;
         di = (u16)(di + si);
@@ -518,6 +521,7 @@ void poly_fill(int ymin, void *tbl, int ymax, int mode)
             case 2: pg[di] &= colour; break;
             default: pg[di] = (u8)(((pg[di] & 0x0E) >> 1) | 0x98); break;   /* the green MFD ramp 98h-9Fh */
             }
+            ENH_REC_FILL(draw_seg, di, pg[di]);   /* ENH: shadow record */
         }
         y--;
     } while ((s16)(y * 2) >= (s16)(ymin * 2));
@@ -636,8 +640,8 @@ void blit_key_clip(void *b)   { blit_key_clip_body(b); }     /* slots 19, 71, 01
 void blit_key_clip_r(void *b) { blit_key_clip_body(b); }     /* slots 20, 72, 019C:0E41 */
 
 /* ------------------------------------------------------------------ screen: clear, copy, flip (slots 43, 44, 48, 51, 52, 59) */
-void clear_screen(void) { memset(seg_ptr(0xA000), 0, 0xFA00); }                 /* slot 43, 019C:1122 */
-void clear_es(unsigned es) { memset(seg_ptr((u16)es), 0, 0xFA00); }             /* slot 59, 019C:1118 */
+void clear_screen(void) { memset(seg_ptr(0xA000), 0, 0xFA00); if (enh_shadow_on) enh_page_cleared(0xA000); }   /* ENH: records void */                 /* slot 43, 019C:1122 */
+void clear_es(unsigned es) { memset(seg_ptr((u16)es), 0, 0xFA00); if (enh_shadow_on) enh_page_cleared((u16)es); }   /* ENH: records void */             /* slot 59, 019C:1118 */
 
 /* slot 44, 019C:11F1: AX words from page 1 to A000 unless the disable word is set */
 void flip(int words)
@@ -645,10 +649,11 @@ void flip(int words)
     if (flip_disable) { flip_last = 0; return; }
     flip_last = 1;
     memcpy(seg_ptr(page_tab[0]), seg_ptr(page_tab[1]), (size_t)(u16)words * 2);
+    if (enh_shadow_on) enh_flip((unsigned)(u16)words * 2);   /* ENH: shadow and layers follow the flip */
 }
 
 /* slot 48, 019C:11DE: 32000 words from srcseg:0 to the draw segment, offset 0 */
-void page_load(unsigned srcseg) { memmove(seg_ptr(draw_seg), seg_ptr((u16)srcseg), 0xFA00); }
+void page_load(unsigned srcseg) { memmove(seg_ptr(draw_seg), seg_ptr((u16)srcseg), 0xFA00); if (enh_shadow_on) enh_page_cleared(draw_seg); }   /* ENH: records void */
 
 /* slots 51, 52, 019C:12E0: 320 bytes (160 words) from the caller's stack buffer to ES:DI */
 void scanline_put(unsigned es, unsigned di, void *src)
@@ -915,12 +920,12 @@ s16 *sprite_scaled(void *w_, int x, int y, int dw_, int dh_, unsigned off, unsig
                     u8 a = *sp++;
                     if (a) {
                         if (--cx < 0) break;
-                        pg[o] = a;
+                        pg[o] = a; ENH_REC_FILL(page_seg(w->page), o, a);   /* ENH: shadow record */
                         o = (u16)(o + dir);
                         acc = (s16)(acc + sw);
                         while (acc < 0) {                    /* the same pixel again */
                             if (--cx < 0) goto rowdone;
-                            pg[o] = a;
+                            pg[o] = a; ENH_REC_FILL(page_seg(w->page), o, a);   /* ENH: shadow record */
                             o = (u16)(o + dir);
                             acc = (s16)(acc + sw);
                         }

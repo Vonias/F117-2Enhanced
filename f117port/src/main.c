@@ -52,6 +52,7 @@ int r3d_leaf_selftest(const char *file);                          /* render3d/r3
 #include "prog.h"
 #include "version.h"
 #include "video/video.h"
+#include "enhanced/enh_canvas.h"   /* ENH */
 #include "enhanced/enhanced.h"   /* ENH */
 
 static int usage(const char *prog)
@@ -59,7 +60,8 @@ static int usage(const char *prog)
     fprintf(stderr,
             "usage: %s [--game-dir DIR] [--scale N] [--aspect 4:3|1:1] [--fullscreen] [--headless]\n"
             "          [--trace] [--check] [--chain-test] [--tick-test [MS]]\n"
-            "          [--keys NAME=CODE,...] [--keymap-test] [--frame-ticks N] [--version] [--classic]\n", prog);
+            "          [--keys NAME=CODE,...] [--keymap-test] [--frame-ticks N] [--version] [--classic]\n"
+            "          [--render-scale N] [--wide] [--no-wide] [--compose-test]   (Enhanced)\n", prog);
     return 2;
 }
 
@@ -138,7 +140,7 @@ int main(int argc, char **argv)
         else return usage(argv[0]);
     }
     if (ktest) return keymap_selftest();                       /* needs neither window nor game files */
-    if (check || tick || ptest || etest || vself || decref || feref || shref || dbref || sndref || simref || r3dref) cfg.headless = true;
+    if (check || tick || ptest || etest || vself || decref || feref || shref || dbref || sndref || simref || r3dref || enh.compose_test) cfg.headless = true;
     if (host_trace()) prog_trace = true;
     if (chain) { prog_trace = true; prog_use_stubs = true; }
 
@@ -162,6 +164,12 @@ int main(int argc, char **argv)
     platform_init();          /* the 70.09 Hz tick -> timer_isr, the keyboard model */
 
     video_init();             /* the driver's state, the fonts of MGRAPHIC.EXE (silently none without the game files) */
+
+    if (enh.compose_test) {                                    /* ENH: canvas geometry and compositor check */
+        int rc = enh_compose_selftest();
+        host_shutdown();
+        return rc;
+    }
 
     if (vself || decref || vtest) {
         int rc = vself ? video_selftest() : decref ? video_decoder_test(decref) : video_screen_test(!cfg.headless);

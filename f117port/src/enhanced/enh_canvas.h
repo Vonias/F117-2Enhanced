@@ -1,0 +1,60 @@
+/* The Enhanced canvas and compositor (DESIGN.md 2.1, 2.5, 3.1, 3.2; S2.1).
+ *
+ * The canvas is the output picture in "layer pixels", Lw x Lh, of any aspect. The original 320x200 frame is placed in it at N times
+ * its size (nearest) at (fx, fy). Three N-times planes sit beside the 8-bit page: the 3D layer, the vector layer and the shadow plane
+ * (which records, per page pixel, who wrote it last and with what value). Until S2.2 / S3.1 emit into the layers they stay empty and
+ * the composed canvas is exactly the 320x200 frame scaled N x N. All of it is off with --classic. */
+#pragma once
+
+#include "types.h"
+
+typedef enum {
+    ENH_VIEW_MENU,    /* shell, menus, debrief: pillarboxed, centred */
+    ENH_VIEW_FRONT,   /* front cockpit: bottom centre, the world around it (Decisions Q4) */
+    ENH_VIEW_FULL,    /* full-screen 3D / outside views: bottom centre, the world around it */
+    ENH_VIEW_FIT      /* left, right, rear: the whole picture fitted to the window height (Q1) */
+} EnhView;
+
+typedef struct {
+    int lw, lh;            /* canvas size in layer pixels */
+    int n;                 /* scale of the 320x200 frame */
+    int fx, fy;            /* layer position of frame pixel (0,0) */
+    int vx, vy, vw, vh;    /* the 3D viewport in layer pixels (the whole canvas in the extended views, else the frame) */
+} EnhCanvas;
+
+/* The geometry of DESIGN 3.1 / 3.2. win = output size in pixels; aspect43 = pixel aspect 1.2 (the 4:3 option), else 1;
+ * fixed_n = --render-scale (0 = the largest whole multiple that fits). Without wide the canvas is the frame: 320n x 200n at (0,0). */
+void enh_canvas_geometry(EnhCanvas *c, EnhView view, int win_w, int win_h, bool aspect43, int fixed_n, bool wide);
+
+extern EnhCanvas enh_cv;        /* the current canvas */
+extern bool enh_shadow_on;      /* the writers of video/mgraphic.c record into the shadow plane */
+
+typedef enum { ENH_ROUTE_ART, ENH_ROUTE_3D } EnhRoute;
+extern int enh_route;           /* set by the 3D pass (S2.2): primitives written now are 3D-layer writes */
+
+/* Active = VGA mode 13h is set and the canvas is on. */
+bool enh_canvas_active(void);
+void enh_canvas_set_active(bool on);
+void enh_set_view(int view_mode);                       /* view_frame's mode word (DSW C07A) -> EnhView */
+EnhView enh_view_get(void);
+/* Recomputes the geometry for the output size; true when the canvas size changed (the host then resizes its frame). */
+bool enh_canvas_update(int win_w, int win_h, bool aspect43);
+/* Composes the live VGA page (CRTC start / pan, DAC) with the layers into the canvas; false when it did not change. */
+bool enh_compose_vga(u32 *xrgb);
+void enh_canvas_to_frame(int *x, int *y);               /* canvas pixel -> 320x200 frame pixel (clamped), for the mouse */
+void enh_frame_to_canvas(int *x, int *y);
+
+/* Shadow records (mgraphic.c hooks). seg:off is the written byte of page 0 or 1; val the byte written. */
+void enh_rec_line(u16 seg, u16 off, u8 val);            /* line / pixel: a vector write (or a 3D line inside a 3D pass); call BEFORE the write */
+void enh_rec_fill(u16 seg, u16 off, u8 val);            /* polygon / sprite pixel: 3D inside a 3D pass, else plain art; call AFTER the write */
+void enh_page_cleared(u16 seg);                         /* a whole page was overwritten: its records are void */
+void enh_flip(unsigned bytes);                          /* the page flip copied `bytes` of page 1 to page 0 */
+
+#define ENH_REC_LINE(seg, off, val) do { if (enh_shadow_on) enh_rec_line((seg), (u16)(off), (u8)(val)); } while (0)
+#define ENH_REC_FILL(seg, off, val) do { if (enh_shadow_on) enh_rec_fill((seg), (u16)(off), (u8)(val)); } while (0)
+
+/* Layers for the emitters (S2.2, S3.x): 16-bit entries, bit 8 = written, low byte = DAC index. Work = being drawn, shown = flipped. */
+u16 *enh_layer3d(void);
+u16 *enh_layer_vec(void);
+
+int enh_compose_selftest(void);                         /* --compose-test */

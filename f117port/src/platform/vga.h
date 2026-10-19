@@ -44,7 +44,9 @@ u8   vga_in(u16 port);                       /* 3DAh also resets the attribute f
 void vga_dac_set(u8 index, u8 r, u8 g, u8 b);        /* 6-bit components */
 void vga_dac_get(u8 index, u8 *r, u8 *g, u8 *b);
 u16  vga_start(void);                        /* CRTC start address (planar bytes) */
-u16  vga_shown_seg(void);                    /* A000 + start / 16: the page being displayed */
+u16  vga_shown_seg(void);
+void vga_compose_13(u32 *xrgb320x200);          /* mode 13h as shown (CRTC start, pan, DAC) as XRGB: the faithful frame */
+bool vga_shown_frame(u8 *idx64000, u16 *page_off64000, u32 *pal256);   /* ENH: the same as indices, for the compositor */                    /* A000 + start / 16: the page being displayed */
 
 /* Vertical retrace (3DAh bit 3) model and the waits that replace the original's polling loops. */
 bool vga_in_vretrace(void);
