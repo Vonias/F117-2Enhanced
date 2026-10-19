@@ -67,7 +67,8 @@ Notes:
 |---|---|---|---|---|
 | S1.1 | `DESIGN.md`: (a) high-resolution rendering: a 3D layer rasterised at N×320x200 (render3d's projection, clipper and spans at N× with sub-pixel precision; the 8-bit DAC colours kept), composited under the original 320x200 cockpit/HUD art scaled by N (nearest); which vector elements (HUD ladder, tapes, reticle lines, map lines, TV window) can also be drawn at N×; the cockpit window mask. (b) frame rate: decouple VGAME's sim step (`39c4` once per frame, scaled by `sim_rate`) from the display: the sim at a fixed step rate, the display at the monitor rate with interpolation of camera, objects, rotating parts, missiles, tracers and smoke between two sim states; what the HUD/MFDs show between steps. (c) the wider view: a viewport larger than 320x200 (left, right and top), the original 320x200 cockpit/HUD frame kept
 at its place (bottom centre, scaled by N), the projection's field of view and culling widened to the new edges, what
-fills the extended area in each view mode (cockpit, full-screen 3D, outside, map); (d) the `ENH:` hook list, how `--classic` stays byte-exact, and the test plan (N=1 equals classic byte for byte; golden frames at N×). | O | M | |
+fills the extended area in each view mode (front cockpit: extended around the art; left/right/rear views: the whole
+picture scaled up to fill; full-screen 3D, outside and map: extended), per Decisions 2026-10-19; (d) the `ENH:` hook list, how `--classic` stays byte-exact, and the test plan (N=1 equals classic byte for byte; golden frames at N×). | O | M | |
 
 ### Phase 2 — Foundations
 | Id | Task | Model | Size | Status |
@@ -82,7 +83,7 @@ fills the extended area in each view mode (cockpit, full-screen 3D, outside, map
 | S3.1 | The main 3D view at N× behind the cockpit art (all view modes: cockpit, full-screen, outside views) | O | M | |
 | S3.2 | The TV/sensor camera window and the map MFD terrain at N× | S | M | |
 | S3.3 | HUD and MFD vector graphics at N× (pitch ladder, tapes' lines, reticle, ILS, map lines and blips); fonts and bitmaps stay the original pixels, scaled | S | M | |
-| S3.4 | Wider view: the 3D world extended left, right and above the original cockpit (which stays in place, unchanged); window and full-screen aspect options; `--classic` = 320x200 | O | M | |
+| S3.4 | Wider view: the 3D world extended left, right and above the original front cockpit (which stays in place, unchanged); the left/right/rear views scaled up as a whole picture; window and full-screen aspect options; `--classic` = 320x200 | O | M | |
 
 ### Phase 4 — Frame rate
 | Id | Task | Model | Size | Status |
@@ -139,6 +140,9 @@ Several bugs in one message; one session then fixes them in a batch.
 - 2026-10-19, U3 item 4 (wider view): keep the original cockpit art in place and unchanged, and extend the 3D view
   to the left, right and top, so a wide or tall window shows more of the world around the cockpit (S3.4). The original
   320x200 picture stays available with `--classic`.
+- 2026-10-19, wider view per view mode: the **front cockpit view** keeps the rule above (cockpit art in place, the
+  world extended around it). The **left, right and rear looking-out views** (256LEFT/RIGHT/REAR with the aircraft art)
+  are not extended: the whole picture, art included, is scaled up to fill the wider window.
 
 ## TODO (parked)
 - [ ] Longer view distance (changes what the original shows; terrain/object tables).
