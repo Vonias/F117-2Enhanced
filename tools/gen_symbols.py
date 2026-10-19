@@ -28,6 +28,9 @@ from functools import lru_cache
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CSV_PATH = os.path.join(ROOT, 'port', 'symbols.csv')
 SPEC_DIR = os.path.join(ROOT, 'port', 'spec')
+# Enhanced: the specs stay in the faithful repo (CLAUDE.md); use ../F117-2/port/spec when they are not here.
+if not os.path.exists(os.path.join(SPEC_DIR, 'platform.md')):
+    SPEC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'F117-2', 'port', 'spec')
 GEN_DIR = os.path.join(ROOT, 'f117port', 'src', 'gen')
 PROG_ORDER = ['setup', 'mps_logo', 'player', 'start', 'vgame', 'end', 'dswap',     # the seven programs
               'asound117', 'mgraphic', 'misc', 'asound.log']                        # driver images they load
