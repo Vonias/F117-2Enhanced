@@ -135,6 +135,29 @@ as hi-res 3D (invisible in practice). Debug: `--enh-mask-dump DIR` writes the cl
 HUD line endpoints are integers computed at 1× (centre of the 1× pixel → layer `fx + N*x + N/2`), so they are thin but move in
 1× steps; giving ladder/tapes sub-pixel endpoints is an optional later step inside S3.3 (only where the port's C computes them).
 
+### 2.7 As built (S2.2): choices where 2.2–2.5 were silent
+* Files: `enhanced/hr.h`, `hr_pass.c` (pass context, B85D point, `--hr-check`), `hr_clip.c` (12EF + 0906 + 0B3F), `hr_raster.c` (1359),
+  `hr_edge2d.c` (1001 + 1442). Hooks (`grep -rn "ENH:" src/render3d src/sim/sim_objovl.c`): `r3d_set_viewport` / `r3d_end_scene` (pass, route),
+  `r3d_project`, `r3d_build_edges` (after each `r3d_make_edge`, whose near-plane point 7D42 the hr edge reads), `r3d_poly_add_edge`,
+  `r3d_poly_finish`, `r3d_line_M` (+ shadow records in `line_M` / `fill_M`), `r3d_draw_sky_ground` (both exits), `r3d_project_point`.
+* R1 at the 16-bit edges: 0906's INT 0 test is made on the 1× quotient (its fallback from the N× numerator); the fast16 / path32 choice and
+  every "fits s16" / overflow test of 12EF and 1001 use the 1× magnitude (`|v| <= 32767 N`), so the hr clip takes the 1× path; the 1001
+  intercept saturates to `N * 7F00h`. A band / horizon point is computed three ways (the original s16 code, exact at 1×, R1 at N×): if
+  the 1× value wrapped, the point is `N *` the wrapped value, else the N× value. `half_q` and the other path quirks are kept literally.
+* State: the 1359 row tables (gap rows) and the 12EF assembler state persist between polygons in the original, so each pass starts from
+  the faithful ones, scaled (row r → rows `fy + N r ..`, L → `fx + N L`, R → `fx + N R + N - 1`); at N = 1 a copy.
+* Ortho (map): `((x N) >> 16) >> c` with the round bit, which equals R1 one-stage; slot 37's skip of a one-pixel span at 13Fh uses
+  `N 320 - 1`. The hz horizon line itself is drawn 1 px (the fills cover it); 3D lines use the `max(1, N/2)` brush at offset `(N - w) / 2`.
+* Shadow: page 1 is MGRAPHIC's `video_page_seg(1)` (a DOS block in the game, not A400; S2.1 assumed A400). 1359 writes record `3D` without
+  touching the layer (the hr polygon follows); any other 1× write inside a 3D pass (sprites, dots, the 1× backdrop) **stamps** its N×N block
+  with the 1× value (bit 9), so it shows as the original pixel until an hr write replaces it. A write to the other page during a pass (the
+  TV camera's backdrop lands on MGRAPHIC's current page) does not stamp; the hr backdrop is drawn only when that page is the pass page.
+* Not yet (later subtasks): sprites at sub-pixel positions (stamped at their 1× place; S3.1 uses `enh_hr_pt` of B85D), the TV camera's
+  second `begin_scene` in the same window clears the first pass's layer (S3.2), the wide view (S3.4).
+* Test `--hr-check` (`port/notes/e22/r3d_hr.py`, ctests `r3d_hr_n1`, `r3d_hr_n234`): the 110 golden scenes with the enhancements on stay
+  byte for byte; N = 1: layer == page for all 2.51 M checked 3D pixels (99.1 % drawn by the hr back end, the rest stamped); N = 2 / 3 / 4:
+  95.7 / 94.3 / 94.0 % of layer pixels agree with their 1× pixel, 99.98 / 99.96 / 99.94 % away from edges (tolerance 90 % and 99.5 %).
+
 ## 3 (b) The wider view
 
 ### 3.1 Canvas geometry (window of any aspect)

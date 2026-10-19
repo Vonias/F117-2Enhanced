@@ -22,11 +22,12 @@ remove it when it is done.
 
 | Task | What to do | For | Time |
 |---|---|---|---|
+| U1 (S2.2) | In PowerShell run `& "C:\Coding\F117-2Enhanced\f117port\build\f117-enhanced.exe" --game-dir C:\Coding\F117-2\Game --render-scale 4` and fly a mission (front cockpit, a look left / right / rear, the TV camera). The 3D world (terrain, objects, sky and ground bands) should be sharp, while the cockpit art, HUD, text and panel look exactly as before. Compare with the same command plus `--classic`. Also try `--dither fine` (no decision yet: S2.3 shows both side by side). Tell us anything broken: wrong colours, holes, flicker, art covered by 3D. | S2.2 | 15 min |
 
 ## Status
 
-- **Done:** S0.1 (repo from the faithful port), S1.1 (`DESIGN.md`, the render and timing design), S2.1 (canvas, compositor, shadow plane; U1 OK 2026-10-19).
-- **Next:** S2.2 (Opus): render3d at N× (the hr back end, rule R1; `DESIGN.md` 2.2-2.4). Your tasks: **User to-do** above.
+- **Done:** S0.1 (repo from the faithful port), S1.1 (`DESIGN.md`, the render and timing design), S2.1 (canvas, compositor, shadow plane; U1 OK 2026-10-19), S2.2 (render3d at N×; U1 pending).
+- **Next:** S2.3 (Sonnet): tests (the faithful suite in `--classic`, golden scenes through the hr path, the reference-rasteriser comparison at N=2/4, PNG and mask dumps; `DESIGN.md` 5.3, 2.7). Your tasks: **User to-do** above.
 - Escalation rule: a subtask that fails twice on Sonnet → new Opus session with a 5-line note
   (symptom, file, what was tried). Never carry an old transcript over.
 
@@ -73,7 +74,7 @@ picture scaled up to fill; full-screen 3D, outside and map: extended), per Decis
 | Id | Task | Model | Size | Status |
 |---|---|---|---|---|
 | S2.1 | Host: canvas separate from 320x200 (any aspect, `--render-scale N`, `--wide`), the compositor (3D layer + vector layer + shadow plane, live DAC/CRTC) and the shadow records in `mgraphic.c`; `--classic` = today's present path (DESIGN 2.1, 2.5, 3.1) | S | M  done 2026-10-19 · U1 OK 2026-10-19 |
-| S2.2 | render3d at N×: the hr back end (`hr_clip/hr_raster/hr_edge2d` copies) fed by hooks in projection, edges, clipper, spans, sky and 1001; rule R1; N=1 byte-identical (DESIGN 2.2–2.4) | O | L | |
+| S2.2 | render3d at N×: the hr back end (`hr_clip/hr_raster/hr_edge2d` copies) fed by hooks in projection, edges, clipper, spans, sky and 1001; rule R1; N=1 byte-identical (DESIGN 2.2–2.4) | O | L | done 2026-10-19 · U1 pending |
 | S2.3 | Tests: the faithful suite in `--classic`; golden scenes at N=1 through the hr path; reference-rasteriser comparison at N=2/4; headless PNG and mask dumps for the user (DESIGN 5.3) | S | M | |
 | S2.4 | Sandboxed display pass: snapshot/restore of mem, VGA model, driver statics and layers; sound/wait suppression; `enh_frame_begin`/`enh_idle` hooks; the sandbox hash ctest (DESIGN 4.2) | O | M | |
 
@@ -89,6 +90,13 @@ Notes:
   CMakeLists). In this repo `video_decoders`, `frontend`, `gen_symbols_current`, `gen_module_headers_current` fail for reasons unrelated to the code (no
   `port/spec/*.md`, no `picdec`/`panlib` tools here; they look in this repo instead of `../F117-2`); `sound` skips.
 - S2.2 implements both dither modes (`--dither grid|fine`, Decisions 2026-10-19); S2.3 shows them to the user (U1).
+- S2.2 status: the hr back end `src/enhanced/hr_pass.c`, `hr_clip.c`, `hr_raster.c`, `hr_edge2d.c` (`hr.h`), fed by `ENH:` hooks in `r3d_set_viewport`,
+  `r3d_end_scene`, `r3d_project`, `r3d_build_edges`, `r3d_poly_add_edge`, `r3d_poly_finish`, `r3d_line_M`, `fill_M` (shadow), `r3d_draw_sky_ground`, `r3d_project_point`;
+  the choices are in `DESIGN.md` 2.7. Every 3D pass on page 0/1 is drawn at N× into the 3D layer (main view, TV camera, map MFD terrain); other 1× writes in a pass
+  (sprites, dots) are stamped as original pixels (sub-pixel sprites: S3.1). Fixed in S2.1's shadow: page 1 is `video_page_seg(1)` (a DOS block), not A400.
+  Options `--dither grid|fine`, `--hr-check` (and `F117_ENH_ARGS` for test drivers). ctests `r3d_hr_n1` (N=1: hr layer == page on the 110 golden scenes, golden
+  frames unchanged with the enhancements on) and `r3d_hr_n234` (agreement 95.7/94.3/94.0 %, away from edges 99.98/99.96/99.94 %); the 24 faithful ctests pass in
+  classic. With `ctest -j4` `shell` once failed on time (passes alone).
 
 ### Phase 3 — Visible features (resolution)
 | Id | Task | Model | Size | Status |
