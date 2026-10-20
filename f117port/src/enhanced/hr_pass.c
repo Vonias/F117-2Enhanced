@@ -41,8 +41,11 @@ static void trace_put(s32 v)
     trace[trace_n++] = v;
 }
 
+static bool trace_has_vec;
+
 void hr_trace(int type, int nargs, const s32 *a)
 {
+    if (type == 9) trace_has_vec = true;
     trace_put(type);
     for (int i = 0; i < nargs; i++) trace_put(a[i]);
 }
@@ -178,6 +181,7 @@ void enh_hr_test_begin(void)
     memset(&hs, 0, sizeof hs);
     { long a, b, c, d, e; hr_obj_stats(&a, &b, &c, &d, &e, true); }
     trace_n = 0;
+    trace_has_vec = false;
     hr_tracing = enh.hr_dump[0] != 0;
     win_x0 = win_y0 = 0; win_x1 = win_y1 = -1;
     last_seg = 0xA000;
@@ -210,6 +214,10 @@ static void write_dump(const char *id)
     const u8 *pg = seg_ptr(last_seg);
     for (int i = 0; i < 64000; i++) { u8 v; sh[i] = enh_shadow_3d((u16)i, &v) && pg[i] == v; }
     fwrite(sh, 1, 64000, f);
+    const u16 *vl = enh_layer_vec();                     /* S3.1: the vector layer when something was emitted into it (a flag word, then lh rows of lw u16) */
+    s32 hv = vl && win_x1 >= win_x0 && trace_has_vec ? 1 : 0;
+    fwrite(&hv, 4, 1, f);
+    if (hv) fwrite(vl, 2, (size_t)enh_cv.lw * (size_t)enh_cv.lh, f);
     fclose(f);
 }
 

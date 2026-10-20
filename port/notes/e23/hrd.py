@@ -24,6 +24,10 @@ class Hrd:
         self.dac = np.frombuffer(raw, dtype=np.uint8, count=768, offset=o).reshape(256, 3)
         o += 768
         self.sh3d = np.frombuffer(raw, dtype=np.uint8, count=64000, offset=o).reshape(200, 320)
+        o += 64000
+        self.vec = None                                  # S3.1: the vector layer (lh x lw u16) when the trace has vector lines
+        if len(raw) >= o + 4 and struct.unpack_from('<i', raw, o)[0] == 1:
+            self.vec = np.frombuffer(raw, dtype='<u2', count=self.lw * self.lh, offset=o + 4).reshape(self.lh, self.lw)
 
     def palette(self):
         """DAC (6-bit) -> 8-bit RGB"""
@@ -33,13 +37,17 @@ class Hrd:
     def events(self):
         """yield (type, args list) over the trace"""
         t, i, n = self.trace, 0, len(self.trace)
-        sizes = {0: 4, 1: 4, 2: 3, 3: 1, 4: 7, 6: 0}
+        sizes = {0: 4, 1: 4, 2: 3, 3: 1, 4: 7, 6: 0, 8: 4, 9: 11}      # 7 (a sprite: x0 y0 dw dh sw sh + sw sh source words), 5 (a polygon) are variable
         while i < n:
             ty = int(t[i])
             if ty == 5:
                 m = int(t[i + 4])
                 yield 5, t[i + 1:i + 5 + 2 * m]
                 i += 5 + 2 * m
+            elif ty == 7:
+                m = int(t[i + 5]) * int(t[i + 6])
+                yield 7, t[i + 1:i + 7 + m]
+                i += 7 + m
             else:
                 k = sizes[ty]
                 yield ty, t[i + 1:i + 1 + k]

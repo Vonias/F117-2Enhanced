@@ -46,6 +46,29 @@ class Ref:
         self.polys = 0
         self.lines = 0
         self.fills = 0
+        self.sprites = self.dots = self.vlines = 0
+        self.vval = None                                       # the vector layer's expected values (S3.1), allocated on the first vector line
+
+    def stamp_block(self, x0, y0, w, hh, colours):
+        """S3.1: layer pixels (x0 + i, y0 + j) = colours[j, i] where >= 0 (0 = transparent when colours < 0 is not used), clipped to the pass window"""
+        wx0, wy0, wx1, wy1 = self.win
+        for j in range(hh):
+            y = y0 + j
+            if y < wy0 or y > wy1:
+                continue
+            xs = np.arange(x0, x0 + w)
+            ok = (xs >= wx0) & (xs <= wx1) & (colours[j] >= 0)
+            self.val[y, xs[ok]] = colours[j][ok]
+
+    def sprite(self, a):
+        """S3.1: the sprite scaled to dw x dh, source column floor(i sw / dw), row floor(j sh / dh) (the DDA of MGRAPHIC sprite_scaled), 0 = transparent"""
+        x0, y0, dw, dh, sw, sh = [int(v) for v in a[:6]]
+        src = np.asarray(a[6:6 + sw * sh], np.int64).reshape(sh, sw)
+        cols = (np.arange(dw, dtype=np.int64) * sw) // dw
+        rows = (np.arange(dh, dtype=np.int64) * sh) // dh
+        img = src[rows][:, cols]
+        self.stamp_block(x0, y0, dw, dh, np.where(img != 0, img, -1))
+        self.sprites += 1
 
     def phase(self, xs, y):
         h = self.h
@@ -175,6 +198,18 @@ class Ref:
                 self.line(*[int(v) for v in a], hz=hz)
             elif ty == 5:
                 self.poly(a)
+            elif ty == 7 and self.win:
+                self.sprite(a)
+            elif ty == 8 and self.win:
+                x, y, n, c = [int(v) for v in a]
+                self.stamp_block(x, y, n, n, np.full((n, n), c))
+                self.dots += 1
+            elif ty == 9:
+                if self.vval is None:
+                    self.vval = np.full((h.lh, h.lw), -1, np.int16)
+                v = [int(q) for q in a]
+                self.line(v[0], v[1], v[2], v[3], v[4], v[5], v[6], target=self.vval, bounds=(v[7], v[8], v[9], v[10]))
+                self.vlines += 1
             elif ty == 6 and self.win:
                 x0, y0, x1, y1 = self.win
                 self.val[y0:y1 + 1, x0:x1 + 1] = -2
@@ -193,10 +228,11 @@ class Ref:
         self.paint(sp, colour | (colour << 8), 'solid', 1)
         self.polys += 1
 
-    def line(self, x0, y0, x1, y1, c, w, o, hz=False):
-        if self.win is None:
+    def line(self, x0, y0, x1, y1, c, w, o, hz=False, target=None, bounds=None):
+        if self.win is None and bounds is None:
             return
-        wx0, wy0, wx1, wy1 = self.win
+        wx0, wy0, wx1, wy1 = bounds if bounds is not None else self.win
+        val = self.val if target is None else target
         dx, dy = x1 - x0, y1 - y0
         xmajor = abs(dy) <= abs(dx)
         if xmajor:
@@ -219,7 +255,7 @@ class Ref:
                     else:
                         px, py = minor + o + kx, major + o + ky
                     ok = (px >= wx0) & (px <= wx1) & (py >= wy0) & (py <= wy1)
-                    self.val[py[ok], px[ok]] = c if strict else -2
+                    val[py[ok], px[ok]] = c if strict else -2
         self.lines += 1
 
 
@@ -227,7 +263,16 @@ def check(h):
     """-> dict of counts for one scenario"""
     r = Ref(h)
     r.run()
-    out = dict(judged=0, gap=0, wrong=0, stray=0, stamped=0, polys=r.polys, fills=r.fills, lines=r.lines, dith=0)
+    out = dict(judged=0, gap=0, wrong=0, stray=0, stamped=0, polys=r.polys, fills=r.fills, lines=r.lines, dith=0, sprites=r.sprites, dots=r.dots, vlines=r.vlines,
+               vjudged=0, vgap=0, vwrong=0, vstray=0)
+    if r.vval is not None and h.vec is not None:           # the vector layer: the clipped lines of the tracers / target boxes
+        vw = (h.vec & 0x100) != 0
+        vv = (h.vec & 0xFF).astype(np.int16)
+        k = r.vval >= 0
+        out['vjudged'] = int(k.sum())
+        out['vgap'] = int((k & ~vw).sum())
+        out['vwrong'] = int((k & vw & (vv != r.vval)).sum())
+        out['vstray'] = int(((r.vval == -1) & vw).sum())
     if not h.has_win:
         return out
     lay = h.full_layer()
@@ -291,7 +336,7 @@ def main():
             bad += 1
             continue
         files = sorted(f for f in os.listdir(work) if f.endswith('.hrd'))
-        tot = dict(judged=0, gap=0, wrong=0, stray=0, stamped=0, polys=0, fills=0, lines=0, dith=0)
+        tot = dict(judged=0, gap=0, wrong=0, stray=0, stamped=0, polys=0, fills=0, lines=0, dith=0, sprites=0, dots=0, vlines=0, vjudged=0, vgap=0, vwrong=0, vstray=0)
         worst = []
         for f in files:
             h = Hrd(os.path.join(work, f))
@@ -312,6 +357,14 @@ def main():
                  100 * tot['wrong'] / j, tot['stray'], 100 * tot['stray'] / j, tot['stamped']))
         for fr, name, c in sorted(worst, reverse=True)[:3]:
             print('  worst: %s gap %d wrong %d stray %d of %d judged' % (name, c['gap'], c['wrong'], c['stray'], c['judged']))
+        print('  S3.1 objects: %d sprites, %d dots (judged with the polygons); %d vector lines: %d layer px judged, gap %d, wrong %d, stray %d'
+              % (tot['sprites'], tot['dots'], tot['vlines'], tot['vjudged'], tot['vgap'], tot['vwrong'], tot['vstray']))
+        if tot['sprites'] < 50 or tot['dots'] < 8 or tot['vlines'] < 50 or tot['vjudged'] < 500:
+            print('  the object scenes did not exercise sprites / dots / vector lines')
+            bad += 1
+        if tot['vgap'] or tot['vwrong'] or tot['vstray']:
+            print('  the vector layer differs from the reference lines')
+            bad += 1
         if tot['dith'] < MIN_DITHER:
             print('  only %d dithered fills in the scenes (need %d)' % (tot['dith'], MIN_DITHER))
             bad += 1

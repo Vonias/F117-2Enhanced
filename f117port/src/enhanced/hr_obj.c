@@ -143,6 +143,19 @@ void enh_sprite_end(u16 off, u16 seg, int size)
     const s32 x0 = sp_cur.x + (enh_hr.xmin - enh_hr.fx) - dw / 2, y0 = sp_cur.y + (enh_hr.ymin - enh_hr.fy) - dh / 2;
     static u8 rowbuf[0x400];
     long px = 0;
+    if (hr_tracing) {                                 /* 7: x0 y0 dw dh sw sh and the source bitmap (sw sh words), for the reference */
+        s32 *t = malloc(sizeof(s32) * (size_t)(6 + sw * sh));
+        if (t) {
+            t[0] = x0; t[1] = y0; t[2] = dw; t[3] = dh; t[4] = sw; t[5] = sh;
+            for (int r = 0; r < sh; r++) {
+                const u8 *rec = rows[r];
+                const u16 len = (u16)(rec[0] | rec[1] << 8), lead = (u16)(rec[2] | rec[3] << 8);
+                for (int i = 0; i < sw; i++) t[6 + r * sw + i] = (i >= lead && i < lead + len) ? rec[4 + i - lead] : 0;
+            }
+            hr_trace(7, 6 + sw * sh, t);
+            free(t);
+        }
+    }
     for (s32 j = 0; j < dh; j++) {
         const s32 ly = y0 + j;
         if (ly < enh_hr.ymin || ly > enh_hr.ymax) continue;
@@ -179,6 +192,7 @@ void enh_dot_end(int colour)
     enh_stamp_hold--;
     const int n = enh_cv.n;
     const s32 x0 = enh_hr_pt.x - n / 2, y0 = enh_hr_pt.y - n / 2;
+    if (hr_tracing) { s32 t[4] = { x0, y0, n, colour }; hr_trace(8, 4, t); }       /* 8: an N x N block */
     for (int ky = 0; ky < n; ky++)
         for (int kx = 0; kx < n; kx++) put3d(x0 + kx, y0 + ky, (u8)colour);
     st.dots++;
@@ -284,6 +298,7 @@ static void vseg(s32 x0, s32 y0, s32 x1, s32 y1, u8 c, int wxmin, int wxmax, int
     const s32 wx1 = enh_cv.fx + n * (wxmax + 1) - 1, wy1 = enh_cv.fy + n * (wymax + 1) - 1;
     s64 ax = x0 - ox, ay = y0 - oy, bx = x1 - ox, by = y1 - oy;
     if (!clip_line(&ax, &ay, &bx, &by, wx1 - ox, wy1 - oy)) return;
+    if (hr_tracing) { s32 t[11] = { (s32)(ax + ox), (s32)(ay + oy), (s32)(bx + ox), (s32)(by + oy), c, vl_w, vl_o, ox, oy, wx1, wy1 }; hr_trace(9, 11, t); }   /* 9: a clipped vector line + its window */
     vbres((s32)(ax + ox), (s32)(ay + oy), (s32)(bx + ox), (s32)(by + oy), c, ox, oy, wx1, wy1);
 }
 
