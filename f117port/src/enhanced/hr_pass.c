@@ -216,7 +216,7 @@ static void write_dump(const char *id)
 /* S3.1: the whole frame as the compositor makes it (the work shadow and layers over the page of the last pass) against the 1x page: at N = 1 every
  * pixel must be equal (sprites, dots, tracers, boxes, the keyed art of every view included); at N > 1 the layer pixels of a block equal its 1x pixel except
  * at edges ("interior" blocks: the 3x3 1x pixels around are one value). Also the canvas as RGB for the dumps (DIR/<id>.cmp). */
-static struct { long px, differ, inner, inner_differ; } fs;
+static struct { long px, differ, inner, inner_differ, vtot, vhit; } fs;
 
 static void frame_check(const char *id)
 {
@@ -228,9 +228,23 @@ static void frame_check(const char *id)
     const u8 *pg = seg_ptr(last_seg);
     enh_compose_work(img, pg, pal);
     memset(&fs, 0, sizeof fs);
+    const u16 *vl = enh_layer_vec();
     for (int y = 0; y < 200; y++)
         for (int x = 0; x < 320; x++) {
             const u8 v = pg[y * 320 + x];
+            u8 sv;
+            if (vl && enh_shadow_vechr((u16)(y * 320 + x), &sv) && sv == v) {   /* a 1x vector footprint: the hr line must pass within one original pixel of it */
+                bool hit = false;
+                for (int by = (y - 1) * n; by < (y + 2) * n && !hit; by++)
+                    for (int bx = (x - 1) * n; bx < (x + 2) * n; bx++) {
+                        const int lx = enh_cv.fx + bx, ly = enh_cv.fy + by;
+                        if (lx < 0 || ly < 0 || lx >= lw || ly >= lh) continue;
+                        const u16 l = vl[(size_t)ly * lw + lx];
+                        if ((l & 0x100) && (u8)l == v) { hit = true; break; }
+                    }
+                fs.vtot++;
+                if (hit) fs.vhit++;;
+            }
             bool inner = x > 0 && x < 319 && y > 0 && y < 199;
             for (int dy = -1; dy <= 1 && inner; dy++)
                 for (int dx = -1; dx <= 1; dx++) if (pg[(y + dy) * 320 + x + dx] != v) { inner = false; break; }
@@ -283,7 +297,7 @@ void enh_hr_test_end(const char *dir, const char *id)
     long sp, spx, dots, lines, lpx;
     hr_obj_stats(&sp, &spx, &dots, &lines, &lpx, true);
     fprintf(f, "%s n=%d passes=%d checked=%ld hr=%ld stamped=%ld agree=%ld differ=%ld empty=%ld inner=%ld inner_differ=%ld "
-               "fpx=%ld fdiffer=%ld finner=%ld finner_differ=%ld sprites=%ld sprite_px=%ld dots=%ld lines=%ld line_px=%ld\n", id, enh_cv.n, hs.passes, hs.checked, hs.hr, hs.stamped,
-            hs.agree, hs.differ, hs.empty, hs.inner, hs.inner_differ, fs.px, fs.differ, fs.inner, fs.inner_differ, sp, spx, dots, lines, lpx);
+               "fpx=%ld fdiffer=%ld finner=%ld finner_differ=%ld vtot=%ld vhit=%ld sprites=%ld sprite_px=%ld dots=%ld lines=%ld line_px=%ld\n", id, enh_cv.n, hs.passes, hs.checked, hs.hr, hs.stamped,
+            hs.agree, hs.differ, hs.empty, hs.inner, hs.inner_differ, fs.px, fs.differ, fs.inner, fs.inner_differ, fs.vtot, fs.vhit, sp, spx, dots, lines, lpx);
     fclose(f);
 }

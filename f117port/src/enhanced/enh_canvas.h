@@ -55,6 +55,7 @@ void enh_page_cleared(u16 seg);                         /* a whole page was over
  * recorded like enh_rec_fill, its block stamped with the 1x value). Call AFTER the write. */
 void enh_rec_3d(u16 seg, u16 off, u8 val);
 void enh_rec_span3d(u16 seg, u16 off, int len);         /* the same for len page bytes from off */
+bool enh_shadow_vechr(u16 off, u8 *val);                /* S3.1: the work record of off is an hr vector emitter's footprint (its value in *val) */
 bool enh_shadow_3d(u16 off, u8 *val);                   /* the work record of off is a 3D write (its value in *val) */
 void enh_pass_clear(int x0, int y0, int x1, int y1);    /* a 3D pass opens: shadow, 3D and vector layer cleared inside its window (frame px) */
 void enh_layers_reset(void);                            /* every record and layer cleared (the render test, per scenario) */

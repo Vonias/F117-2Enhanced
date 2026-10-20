@@ -184,6 +184,13 @@ void enh_rec_span3d(u16 seg, u16 off, int len)
     for (int i = 0; i < len; i++) enh_rec_3d(seg, (u16)(off + i), pg[(u16)(off + i)]);
 }
 
+bool enh_shadow_vechr(u16 off, u8 *val)
+{
+    if (off >= PAGE_PIXELS || sh_work[off].src != SRC_VECHR || sh_work[off].under == sh_work[off].val) return false;   /* a footprint: the page changed under it */
+    *val = sh_work[off].val;
+    return true;
+}
+
 bool enh_shadow_3d(u16 off, u8 *val)
 {
     if (off >= PAGE_PIXELS || sh_work[off].src != SRC_3D) return false;

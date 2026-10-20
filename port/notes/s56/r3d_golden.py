@@ -109,6 +109,46 @@ def scenarios(T, st):
                    'pokes 0xC02A %s' % struct.pack('<i', cy).hex(), 'poke w 0x2DF4 %d' % w(uz + 0x20)]
             pose = ['poke w 0x2DEE 0', 'poke w 0x2DF0 %d' % w(-0x200), 'poke w 0x2DF2 0', 'poke w 0xC07A 0']
             T.add('unit%d_%d' % (n, k), 's1', base + pos + pose + ['call view_frame'])
+    # (m) S3.1: the objects on top of the scene (sprites, dots, tracers, target boxes, the explosion) in every view mode of view_frame
+    pose = ['poke w 0x2DEE 0', 'poke w 0x2DF0 0', 'poke w 0x2DF2 0', 'poke w 0xC072 1']
+    ring = ['pokes 0x%X %s' % (0xB056 + 16 * i, struct.pack('<iiHHHH', px, py + 0x1800, 0x40, 0, 0, 0).hex()) for i in range(16)]
+    for name, mode, q in VIEWS:
+        T.add('view_%s' % name, 's1', base + objects(st, q) + pose + ring + ['poke w 0xC07A %d' % mode, 'call view_frame'])
+    # the target box (rectangle and hexagon), the diamond and the floating name of a site, in the cockpit view and in the small view [294B]
+    for small in (0, 1):
+        T.add('view_boxes%d' % small, 's1', base + objects(st) + pose + ['poke w 0xC07A 0', 'poke b 0x294B %d' % small, 'call view_frame',
+              'call r3d_project_point %d %d 60' % (w(px + 3), w(py - 40)), 'call hud_target_box 150 45 9 0 %d' % 0x29, 'call hud_draw_diamond',
+              'call r3d_project_point %d %d 90' % (w(px - 6), w(py - 70)), 'call hud_target_box 140 40 12 1 %d' % 0x0A])
+
+
+# S3.1: the view modes whose main 3D view is drawn through r3d_scene_draw (view_frame): cockpit, clean front, rear, left, right, the outside / chase / TV-like
+# cameras and the own-aircraft view
+# (name, mode, q): q turns the objects to where that camera looks (0 = ahead of the player, 1 = behind, 2 = +x, 3 = -x)
+VIEWS = (('cockpit', 0, 0), ('front', 0x44, 0), ('rear', 0x41, 1), ('left', 0x42, 3), ('right', 0x43, 2), ('ring', 0x84, 0), ('side', 0x85, 3), ('top', 0x86, 1),
+         ('behind', 0x87, 0), ('chase', 0x88, 0), ('weapon', 0x89, 0), ('own', 0x8B, 0), ('map', 0x8C, 0))
+
+
+def objects(st, q=0):
+    """S3.1: what the world pass 9ACA and the overlay pass A17E put on top of the scene, all in front of the player (yaw 0 looks along -y): smoke puffs (billboard
+    sprites of every size), a near and a far projectile (the model and its target box, the far one a dot), two player rounds and two enemy rounds (tracers), an
+    explosion (1A85 sprite). Positions are in site units relative to the player (C0A4 / C0B2); B85D projects them with the view matrix B156 of view_frame."""
+    px, py = st['C0A4'], st['C0B2']
+    rot = lambda dx, dy: ((dx, dy), (-dx, -dy), (-dy, dx), (dy, -dx))[q]
+    ops = []
+    for j in range(8):
+        dx, dy = rot(2 * j - 8, -(0x8 + 4 * j + 6))
+        ops.append('pokes 0x%X %s' % (0x39DA + 8 * j, struct.pack('<HHhH', w(px + dx), w(py + dy), 20 + 10 * j, j & 7).hex()))
+    ops.append('poke w 0xB16C 4')
+    for i, (dx, dy, dz, vx, vy, vz) in enumerate(((-6, -50, 40, 3, -8, 2), (4, -70, 55, -2, -9, 1), (-2, -90, 30, 1, -6, 3), (8, -60, 70, -3, -7, 0),
+                                                  (-9, -120, 50, 2, -10, 1), (6, -150, 35, -1, -12, 2), (0, -200, 60, 0, -14, 0), (3, -260, 45, 1, -11, 1))):
+        (dx, dy), (vx, vy) = rot(dx, dy), rot(vx, vy)
+        ops.append('pokes 0x%X %s' % (0xE44E + 12 * i, struct.pack('<HHHhhh', w(px + dx), w(py + dy), dz, vx, vy, vz).hex()))
+    for i, dy in ((0, -26), (9, -400)):
+        dx, dy = rot(5, dy)
+        ops.append('pokes 0x%X %s' % (0x3C0C + 0x1C * i, struct.pack('<14H', w(px + dx), w(py + dy), 36, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0).hex()))
+    ex, ey = rot(-3, -44)
+    ops += ['poke w 0x9D0C 9', 'poke w 0x98FE 0xFFFF', 'poke w 0xC0A0 %d' % w(px + ex), 'poke w 0xC0AA %d' % w(py + ey), 'poke w 0xC0B0 52']
+    return ops
 
 
 def stamp(comm):
