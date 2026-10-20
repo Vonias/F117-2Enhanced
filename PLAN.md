@@ -185,3 +185,18 @@ Several bugs in one message; one session then fixes them in a batch.
 ## TODO (parked)
 - [ ] Longer view distance (changes what the original shows; terrain/object tables).
 - [ ] Roland MT-32 (`RSOUND.117`; Munt, user ROMs) — faithful TODO, would be done in `../F117-2` first.
+
+## Future mod (not this repo's goal)
+
+Ideas that change the game's content or simulation, so they belong to a later mod built on this engine, not to the
+Enhanced port (whose rule is: original art and sim unchanged). Recorded 2026-10-20.
+
+- **Weather and turbulence**: the original draws no clouds. A mod would add cloud coverage per mission and turbulence
+  in and near clouds, through the flight model's existing buffet term (`1e9e`, simflow.md Part 2 section 2.4) with its
+  own random stream, so the original `rand_n` sequence is not disturbed.
+- **1:1 altitude without the altitude bands**: the 3D world uses a compressed altitude `alt_s = [2DF4]` (simflow.md
+  Part 2 section 2.9, flight.md section 1): feet 1:1 below 8192 ft, then half slope to 16384 ft, then a quarter. Its
+  vertical unit is also exaggerated against the horizontal one (32 alt_s units = 1 level unit = 15.6 m, so 1 ft draws
+  as 0.49 m, x1.6). A mod would make altitude true scale (no bands, 1 ft = 0.3048 m against the horizontal unit). It
+  touches every user of `alt_s`: the 3D camera and objects, unit/projectile/tracer z, the radar altitude cone, AI
+  altitude targets, collision and terrain probes, landing, so it is a sim change, not a rendering option.
