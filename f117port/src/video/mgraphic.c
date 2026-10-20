@@ -411,26 +411,35 @@ void hud_tick_strip(int si_, int bx_, int cl_, int dl_)
     u16 dx = col[(si >> 1) & 3];
     u16 lo = rmin[(si >> 1) & 3], hi = rmax[(si >> 1) & 3];
     u8 ch = 10;
+    const bool enh_h = enh_shadow_on && enh_hud_begin_tick(draw_seg, colour);   /* ENH: S3.3, the ticks are drawn again at N x */
+#define TICK_PX(d) do { ENH_REC_LINE(draw_seg, (d), colour); pg[(d)] = colour; } while (0)   /* ENH: S3.3 (the pixel is a vector record) */
     for (;;) {
         if (bx < lo) break;
         if (bx <= hi) {
             u16 di = (u16)(rowoff(bx) + dx);
+            int npx = 1;
             if (ch == 5) {                                  /* a 2-pixel tick */
-                pg[di] = colour; di = (u16)(di + dir);
-                pg[di] = colour;
+                TICK_PX(di); di = (u16)(di + dir);
+                TICK_PX(di);
+                npx = 2;
             } else {
                 if (ch == 10) {                             /* the major tick: 2 pixels, a third unless cl */
-                    pg[di] = colour; di = (u16)(di + dir);
-                    pg[di] = colour; di = (u16)(di + dir);
-                    if (cl) goto next;
+                    TICK_PX(di); di = (u16)(di + dir);
+                    TICK_PX(di); di = (u16)(di + dir);
+                    npx = 2;
+                    if (cl) goto emit;
                 }
-                pg[di] = colour;                            /* every other row: the scale line itself, 1 pixel */
+                TICK_PX(di);                                /* every other row: the scale line itself, 1 pixel */
+                if (ch == 10) npx = 3;
             }
+        emit:
+            if (enh_h) enh_hud_tick((int)dx, (int)bx, dir, npx);   /* ENH: S3.3 */
         }
-    next:
         bx = (u16)(bx - 2);
         ch = ch == 10 ? 1 : (u8)(ch + 1);
     }
+#undef TICK_PX
+    if (enh_h) enh_hud_end_tick();   /* ENH: S3.3 */
 }
 
 /* ------------------------------------------------------------------ pages, offsets, colour (slots 12-16, 23-30, 32-36, 38-39, 49, 56-59, 62-67, 75, 79-83) */
@@ -494,6 +503,7 @@ void line(int x1_, int y1_, int x2_, int y2_)
     u16 major = cx, minor = dx;
     u8 *pg = seg_ptr(draw_seg);
     u16 di = (u16)(rowoff(y1) + draw_off + x1);
+    const bool enh_h = enh_shadow_on && enh_hud_begin(draw_seg, colour, (int)(s16)x1, (int)(s16)y1, (int)(s16)x2, (int)(s16)y2, draw_off);   /* ENH: S3.3, the line is drawn again at N x */
     u16 e = (u16)-(s16)((u16)(major + 1) >> 1);
     si = (u16)(si - 1);
     for (;;) {
@@ -506,6 +516,7 @@ void line(int x1_, int y1_, int x2_, int y2_)
         e = (u16)(e - major);
         di = (u16)(di + bp);
     }
+    if (enh_h) enh_hud_end_line();   /* ENH: S3.3 */
 }
 
 /* slot 36, 019C:056E: unused by the programs */
@@ -535,6 +546,7 @@ void poly_fill(int ymin, void *tbl, int ymax, int mode)
             default: pg[di] = ramp_98(pg[di]); break;   /* the green MFD ramp 98h-9Fh */
             }
             if (enh_shadow_on && mode > 2 && enh_rec_remap(draw_seg, di, was, pg[di], ramp_98)) continue;   /* ENH: S3.2, the layer block follows the recolour */
+            if (enh_vec_hold > 0 && enh_shadow_on && enh_route == ENH_ROUTE_ART) { enh_rec_vecfill(draw_seg, di, was, pg[di]); continue; }   /* ENH: S3.3, the ADI polygon is a vector footprint */
             ENH_REC_FILL(draw_seg, di, pg[di]);   /* ENH: shadow record */
         }
         y--;

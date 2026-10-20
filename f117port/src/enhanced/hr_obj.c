@@ -18,6 +18,7 @@
 #include "enhanced/enh_canvas.h"
 #include "enhanced/hr.h"
 #include "render3d/r3d.h"
+#include "gen/module_video.h"   /* offset_get */
 #include "video/video.h"
 
 #define BILL_MAX 50
@@ -412,5 +413,134 @@ void enh_diamond_end(int sx, int sy, int colour)
     vseg(cx, cy - d, cx + d, cy, c, wx0, wx1, wy0, wy1);
     vseg(cx + d, cy, cx, cy + d, c, wx0, wx1, wy0, wy1);
     vseg(cx, cy + d, cx - d, cy, c, wx0, wx1, wy0, wy1);
+    st.lines++;
+}
+
+/* ---------------------------------------------------------------- the HUD and MFD lines (S3.3) */
+
+/* Every 1x vector line of the cockpit (MGRAPHIC line(), slot 31: the HUD frame, tapes' reference marks, pitch ladder, reticle, ILS bars, the map MFD's route lines, arcs and
+ * symbols, the scope, the TV crosshair) and the tick strip (hud_tick_strip, 071A) is drawn again here at N x: a thin line of max(1, N/2) layer pixels (Decisions Q3) in the vector
+ * layer from the 1x endpoints. begin (before the 1x pixels are written) decides and holds the footprint (enh_vec_hold: the 1x pixels are SRC_VECHR records, which show what was
+ * under them where no hr pixel lands); end draws the hr line. Not taken (the 1x pixels stay the original's, N x N blocks): colour 0 (the HUD erases with it), a single point (the
+ * map's 2x2 blobs and the dots keep their solid look), lines of the 3D passes (they are 3D-layer geometry), and lines inside another emitter's hold (tracers, boxes). Axis-aligned
+ * lines keep the full length of the 1x line (block edge to block edge, so ticks and frame corners join); diagonals run between the block centres. */
+static struct { int x1, y1, x2, y2, c; } hl;
+
+static bool hud_ok(u16 seg, int colour)
+{
+    return colour != 0 && enh_mirror <= 0 && enh_route == ENH_ROUTE_ART && enh_stamp_hold <= 0 && enh_vec_hold <= 0 && enh_page_tracked(seg) && enh_layer_vec() && enh_cv.lw > 0;
+}
+
+/* one line in layer pixels with the brush: the window is the frame; trace type 9 for the reference rasteriser */
+static void hud_seg(s32 x0, s32 y0, s32 x1, s32 y1, u8 c)
+{
+    const int n = enh_cv.n;
+    const s32 wx0 = enh_cv.fx, wy0 = enh_cv.fy, wx1 = enh_cv.fx + 320 * n - 1, wy1 = enh_cv.fy + 200 * n - 1;
+    vl_w = n / 2 > 1 ? n / 2 : 1;
+    vl_o = (n - vl_w) / 2;
+    if (hr_tracing) { s32 t[11] = { x0, y0, x1, y1, c, vl_w, vl_o, wx0, wy0, wx1, wy1 }; hr_trace(9, 11, t); }
+    vbres(x0, y0, x1, y1, c, wx0, wy0, wx1, wy1);
+}
+
+/* the frame pixels (xa..xb, ya..yb) of an axis-aligned run, as one line whose brush covers it block edge to block edge */
+static void hud_run(int xa, int ya, int xb, int yb, u8 c)
+{
+    const int n = enh_cv.n, w = n / 2 > 1 ? n / 2 : 1, o = (n - w) / 2;
+    if (xa > xb) { int t = xa; xa = xb; xb = t; }
+    if (ya > yb) { int t = ya; ya = yb; yb = t; }
+    if (ya == yb) hud_seg(enh_cv.fx + n * xa - o, enh_cv.fy + n * ya, enh_cv.fx + n * (xb + 1) - o - w, enh_cv.fy + n * ya, c);    /* horizontal: thin across, full along */
+    else          hud_seg(enh_cv.fx + n * xa, enh_cv.fy + n * ya - o, enh_cv.fx + n * xa, enh_cv.fy + n * (yb + 1) - o - w, c);    /* vertical */
+}
+
+bool enh_hud_begin(u16 seg, int colour, int x1, int y1, int x2, int y2, u16 draw_off)
+{
+    if (!hud_ok(seg, colour)) return false;
+    const unsigned o1 = (u16)(draw_off + (u16)y1 * 320u + (u16)x1), o2 = (u16)(draw_off + (u16)y2 * 320u + (u16)x2);
+    if (o1 >= 64000 || o2 >= 64000) return false;
+    const int ax = (int)(o1 % 320), ay = (int)(o1 / 320), bx = (int)(o2 % 320), by = (int)(o2 / 320);
+    if (bx - ax != x2 - x1 || by - ay != y2 - y1) return false;       /* the line wrapped over a row: not a clipped HUD line, leave it */
+    if (ax == bx && ay == by) return false;                           /* a point */
+    hl.x1 = ax; hl.y1 = ay; hl.x2 = bx; hl.y2 = by; hl.c = colour;
+    enh_vec_hold++;
+    return true;
+}
+
+void enh_hud_end_line(void)
+{
+    enh_vec_hold--;
+    const u8 c = (u8)hl.c;
+    if (hl.x1 == hl.x2 || hl.y1 == hl.y2) hud_run(hl.x1, hl.y1, hl.x2, hl.y2, c);
+    else {
+        const int n = enh_cv.n;
+        hud_seg(enh_cv.fx + n * hl.x1, enh_cv.fy + n * hl.y1, enh_cv.fx + n * hl.x2, enh_cv.fy + n * hl.y2, c);
+    }
+    st.lines++;
+}
+
+bool enh_hud_begin_tick(u16 seg, int colour)
+{
+    if (!hud_ok(seg, colour)) return false;
+    hl.c = colour;
+    enh_vec_hold++;
+    return true;
+}
+
+void enh_hud_tick(int x, int y, int dir, int npx)
+{
+    const u8 c = (u8)hl.c;
+    if (npx >= 2) { hud_run(x, y, x + dir * (npx - 1), y, c); st.lines++; return; }
+    /* one pixel of the scale line: a dash as tall as the 1x pixel, thin across */
+    const int n = enh_cv.n, w = n / 2 > 1 ? n / 2 : 1, o = (n - w) / 2;
+    hud_seg(enh_cv.fx + n * x, enh_cv.fy + n * y - o, enh_cv.fx + n * x, enh_cv.fy + n * (y + 1) - o - w, c);
+    st.lines++;
+}
+
+void enh_hud_end_tick(void) { enh_vec_hold--; }
+
+/* ---------------------------------------------------------------- the ADI horizon polygon (S3.3) */
+
+/* cockpit_draw_adi (17A3) fills a quadrilateral (the ground half of the instrument, vertices in window pixels, window 33 x 29 at the draw offset) with colour 1 over the
+ * background. begin holds the 1x footprint (poly_fill records it as a vector footprint); end fills the same polygon at N x in the vector layer, the edges through the
+ * centres of the vertex pixels (a straight horizon edge instead of the 1x staircase) and a layer pixel in when its centre is inside or on an edge (trace type 11). */
+static u8 adi_c;
+
+bool enh_adi_begin(u16 seg, int colour)
+{
+    if (enh_cv.n < 2 || !hud_ok(seg, colour)) return false;
+    adi_c = (u8)colour;
+    enh_vec_hold++;
+    return true;
+}
+
+void enh_adi_end(const s16 *pts, int n)
+{
+    enh_vec_hold--;
+    const int N = enh_cv.n;
+    const unsigned off = offset_get();
+    const int ox = (int)(off % 320), oy = (int)(off / 320), ww = (s16)DSW(0x2293) + 1, wh = (s16)DSW(0x2295) + 1;
+    const s32 wx0 = enh_cv.fx + N * ox, wy0 = enh_cv.fy + N * oy, wx1 = enh_cv.fx + N * (ox + ww) - 1, wy1 = enh_cv.fy + N * (oy + wh) - 1;
+    if (n > 8) n = 8;
+    s64 vx[8], vy[8];
+    s32 t[6 + 16] = { adi_c, n, wx0, wy0, wx1, wy1 };
+    for (int i = 0; i < n; i++) {                                   /* doubled layer coordinates of the vertex pixel centres */
+        vx[i] = 2 * (s64)(enh_cv.fx + N * (ox + pts[2 * i])) + N;
+        vy[i] = 2 * (s64)(enh_cv.fy + N * (oy + pts[2 * i + 1])) + N;
+        t[6 + 2 * i] = (s32)vx[i]; t[7 + 2 * i] = (s32)vy[i];
+    }
+    if (hr_tracing) hr_trace(11, 6 + 2 * n, t);
+    s64 area = 0;
+    for (int i = 0; i < n; i++) area += vx[i] * vy[(i + 1) % n] - vx[(i + 1) % n] * vy[i];
+    if (area == 0) return;
+    const int sg = area > 0 ? 1 : -1;
+    for (s32 ly = wy0; ly <= wy1; ly++)
+        for (s32 lx = wx0; lx <= wx1; lx++) {
+            const s64 px = 2 * (s64)lx + 1, py = 2 * (s64)ly + 1;
+            bool in = true;
+            for (int i = 0; i < n && in; i++) {
+                const int j = (i + 1) % n;
+                if (sg * ((vx[j] - vx[i]) * (py - vy[i]) - (vy[j] - vy[i]) * (px - vx[i])) < 0) in = false;
+            }
+            if (in) { enh_vec_put(lx, ly, adi_c); st.line_px++; }
+        }
     st.lines++;
 }

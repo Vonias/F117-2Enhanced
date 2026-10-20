@@ -45,7 +45,7 @@ static bool trace_has_vec;
 
 void hr_trace(int type, int nargs, const s32 *a)
 {
-    if (type == 9) trace_has_vec = true;
+    if (type == 9 || type == 11) trace_has_vec = true;
     trace_put(type);
     for (int i = 0; i < nargs; i++) trace_put(a[i]);
 }
@@ -259,7 +259,7 @@ static void write_dump(const char *id)
 /* S3.1: the whole frame as the compositor makes it (the work shadow and layers over the page of the last pass) against the 1x page: at N = 1 every
  * pixel must be equal (sprites, dots, tracers, boxes, the keyed art of every view included); at N > 1 the layer pixels of a block equal its 1x pixel except
  * at edges ("interior" blocks: the 3x3 1x pixels around are one value). Also the canvas as RGB for the dumps (DIR/<id>.cmp). */
-static struct { long px, differ, inner, inner_differ, vtot, vhit, tpx, tramp; } fs;
+static struct { long px, differ, inner, inner_differ, vtot, vhit, tpx, tramp, vthin, vstray; } fs;
 
 static void frame_check(const char *id)
 {
@@ -286,7 +286,25 @@ static void frame_check(const char *id)
                         if ((l & 0x100) && (u8)l == v) { hit = true; break; }
                     }
                 fs.vtot++;
-                if (hit) fs.vhit++;;
+                if (hit) fs.vhit++;
+                u8 under = 0;
+                bool under3d = false;
+                enh_shadow_under((u16)(y * 320 + x), &under, &under3d);
+                bool thin = false, stray = false;           /* S3.3: the block shows less than the full line colour (the line is thin), and only colours of the 5x5 original pixels around it (the footprint itself covered the 3D pixels it replaced) */
+                for (int ky = 0; ky < n; ky++)
+                    for (int kx = 0; kx < n; kx++) {
+                        const u32 c = img[(size_t)(enh_cv.fy + y * n + ky) * lw + (size_t)(enh_cv.fx + x * n + kx)];
+                        if (c != v) thin = true;
+                        bool near = under3d || c == under;
+                        for (int dy = -2; dy <= 2 && !near; dy++)
+                            for (int dx = -2; dx <= 2; dx++) {
+                                const int qx = x + dx, qy = y + dy;
+                                if (qx >= 0 && qx < 320 && qy >= 0 && qy < 200 && pg[qy * 320 + qx] == c) { near = true; break; }
+                            }
+                        if (!near) stray = true;
+                    }
+                if (thin) fs.vthin++;
+                if (stray) fs.vstray++;
             }
             bool inner = x > 0 && x < 319 && y > 0 && y < 199;
             for (int dy = -1; dy <= 1 && inner; dy++)
@@ -358,7 +376,7 @@ void enh_hr_test_end(const char *dir, const char *id)
             }
     }
     fprintf(f, "%s n=%d passes=%d checked=%ld hr=%ld stamped=%ld agree=%ld differ=%ld empty=%ld inner=%ld inner_differ=%ld "
-               "fpx=%ld fdiffer=%ld finner=%ld finner_differ=%ld vtot=%ld vhit=%ld sprites=%ld sprite_px=%ld dots=%ld lines=%ld line_px=%ld wpx=%ld w3d=%ld tpx=%ld tramp=%ld\n", id, enh_cv.n, hs.passes, hs.checked, hs.hr, hs.stamped,
-            hs.agree, hs.differ, hs.empty, hs.inner, hs.inner_differ, fs.px, fs.differ, fs.inner, fs.inner_differ, fs.vtot, fs.vhit, sp, spx, dots, lines, lpx, wpx, w3d, fs.tpx, fs.tramp);
+               "fpx=%ld fdiffer=%ld finner=%ld finner_differ=%ld vtot=%ld vhit=%ld vthin=%ld vstray=%ld sprites=%ld sprite_px=%ld dots=%ld lines=%ld line_px=%ld wpx=%ld w3d=%ld tpx=%ld tramp=%ld\n", id, enh_cv.n, hs.passes, hs.checked, hs.hr, hs.stamped,
+            hs.agree, hs.differ, hs.empty, hs.inner, hs.inner_differ, fs.px, fs.differ, fs.inner, fs.inner_differ, fs.vtot, fs.vhit, fs.vthin, fs.vstray, sp, spx, dots, lines, lpx, wpx, w3d, fs.tpx, fs.tramp);
     fclose(f);
 }

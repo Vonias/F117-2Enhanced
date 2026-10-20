@@ -216,6 +216,31 @@ class Ref:
                 v = [int(q) for q in a]
                 self.line(v[0], v[1], v[2], v[3], v[4], v[5], v[6], target=self.vval, bounds=(v[7], v[8], v[9], v[10]))
                 self.vlines += 1
+            elif ty == 11:                                     # S3.3: a polygon of the vector layer (the ADI): a layer pixel is in when its centre is inside or on an edge
+                if self.vval is None:
+                    self.vval = np.full((h.lh, h.lw), -1, np.int16)
+                v = [int(q) for q in a]
+                col, m, wx0, wy0, wx1, wy1 = v[:6]
+                vx, vy = np.array(v[6::2][:m], np.int64), np.array(v[7::2][:m], np.int64)
+                ys, xs = np.mgrid[wy0:wy1 + 1, wx0:wx1 + 1]
+                px, py = 2 * xs + 1, 2 * ys + 1
+                area = int((vx * np.roll(vy, -1) - np.roll(vx, -1) * vy).sum())
+                if area:
+                    sg = 1 if area > 0 else -1
+                    ins = np.ones(xs.shape, bool)
+                    for k in range(m):
+                        j = (k + 1) % m
+                        ins &= sg * ((vx[j] - vx[k]) * (py - vy[k]) - (vy[j] - vy[k]) * (px - vx[k])) >= 0
+                    self.vval[ys[ins], xs[ins]] = col
+                self.vlines += 1
+            elif ty == 13:                                     # S3.3: the map window is saved to the backup page: its vector layer is kept
+                x0, y0, x1, y1 = [int(q) for q in a]
+                self.vsave = None if self.vval is None else self.vval[y0:y1 + 1, x0:x1 + 1].copy()
+            elif ty == 12:                                     # S3.3: the window is restored from the backup: the lines drawn over it are gone, the saved ones come back
+                if self.vval is not None:
+                    x0, y0, x1, y1 = [int(q) for q in a]
+                    vs = getattr(self, 'vsave', None)
+                    self.vval[y0:y1 + 1, x0:x1 + 1] = -1 if vs is None else vs
             elif ty == 6 and self.win:
                 x0, y0, x1, y1 = self.win
                 self.val[y0:y1 + 1, x0:x1 + 1] = -2
@@ -344,6 +369,7 @@ def main():
         files = sorted(f for f in os.listdir(work) if f.endswith('.hrd'))
         tot = dict(judged=0, gap=0, wrong=0, stray=0, stamped=0, polys=0, fills=0, lines=0, dith=0, sprites=0, dots=0, vlines=0, vjudged=0, vgap=0, vwrong=0, vstray=0, tints=0)
         s32 = dict(judged=0, gap=0, wrong=0, stray=0, sprites=0, tints=0, n=0)       # S3.2: the TV camera (tv*) and map MFD (map*) scenes on their own
+        s33 = dict(n=0, vlines=0, vjudged=0, vgap=0, vwrong=0, vstray=0)             # S3.3: the HUD / MFD scenes (hud_*): lines and the ADI polygon of the vector layer
         worst = []
         for f in files:
             h = Hrd(os.path.join(work, f))
@@ -351,6 +377,10 @@ def main():
             c['dith'] = dithers(h)
             for k in tot:
                 tot[k] += c[k]
+            if f.startswith('hud_'):
+                s33['n'] += 1
+                for k in ('vlines', 'vjudged', 'vgap', 'vwrong', 'vstray'):
+                    s33[k] += c[k]
             if f.startswith(('tv', 'map')):
                 s32['n'] += 1
                 for k in ('judged', 'gap', 'wrong', 'stray', 'sprites', 'tints'):
@@ -377,6 +407,10 @@ def main():
             bad += 1
         if s32['gap'] + s32['stray'] or s32['wrong'] > s32['judged'] // 20000:
             print('  the TV / map windows differ from the reference rasteriser')
+            bad += 1
+        print('  S3.3 HUD / MFD scenes: %d scenes, %d vector lines and polygons, %d layer px judged: gap %d, wrong %d, stray %d' % (s33['n'], s33['vlines'], s33['vjudged'], s33['vgap'], s33['vwrong'], s33['vstray']))
+        if s33['n'] < 12 or s33['vlines'] < 200 or s33['vjudged'] < 3000 * n:
+            print('  the HUD / MFD scenes did not exercise the vector lines')
             bad += 1
         if tot['sprites'] < 50 or tot['dots'] < 8 or tot['vlines'] < 50 or tot['vjudged'] < 500:
             print('  the object scenes did not exercise sprites / dots / vector lines')

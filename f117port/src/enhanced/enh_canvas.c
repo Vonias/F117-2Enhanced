@@ -28,6 +28,7 @@ EnhCanvas enh_cv = { 320, 200, 1, 0, 0, 0, 0, 320, 200 };
 bool enh_shadow_on;
 int enh_route;
 int enh_stamp_hold;   /* S3.1: > 0 = the 1x writes of a 3D pass are recorded but not stamped (an hr emitter draws the object itself) */
+int enh_mirror;       /* S3.3 */
 int enh_vec_hold;     /* S3.1: > 0 = the 1x line()/put_pixel writes are an hr emitter's (SRC_VECHR) */
 
 static bool active;
@@ -164,6 +165,20 @@ void enh_rec_line(u16 seg, u16 off, u8 val)
     r->val = val;
 }
 
+/* S3.3: a polygon pixel written (call AFTER the write; `old` = the page value it replaced) as the footprint of an hr vector fill: the same record as a held line pixel */
+void enh_rec_vecfill(u16 seg, u16 off, u8 old, u8 val)
+{
+    if (!rec_ok(seg, off)) return;
+    Shadow *r = &sh_work[off];
+    bool fresh = r->src != SRC_NONE && old == r->val;
+    if (!fresh) vec_clear_block(off);
+    if ((r->src == SRC_VEC || r->src == SRC_VECHR) && fresh) { r->val = val; return; }
+    r->under3d = (u8)(r->src == SRC_3D && fresh);
+    r->under = old;
+    r->src = SRC_VECHR;
+    r->val = val;
+}
+
 void enh_rec_fill(u16 seg, u16 off, u8 val)
 {
     if (!rec_ok(seg, off)) return;
@@ -208,6 +223,13 @@ bool enh_shadow_vechr(u16 off, u8 *val)
 {
     if (off >= PAGE_PIXELS || sh_work[off].src != SRC_VECHR || sh_work[off].under == sh_work[off].val) return false;   /* a footprint: the page changed under it */
     *val = sh_work[off].val;
+    return true;
+}
+
+bool enh_shadow_under(u16 off, u8 *under, bool *under3d)      /* S3.3: what a vector record replaced */
+{
+    if (off >= PAGE_PIXELS || (sh_work[off].src != SRC_VECHR && sh_work[off].src != SRC_VEC)) return false;
+    *under = sh_work[off].under; *under3d = sh_work[off].under3d != 0;
     return true;
 }
 
@@ -369,8 +391,25 @@ static void probe_flip(void)
                 cn[k]++;
                 if (r->src == SRC_3D && r->val == pg[y * 320 + x]) c3[k]++;
             }
-    fprintf(f, "frame %d tv %ld/%ld map %ld/%ld rmfd=%x lmfdoff=%x cockpit=%x view=%x p4088=%x draw=%x master=%x site=%x unit=%x\n", frame, c3[0], cn[0], c3[1], cn[1],
-            DSW(0xDFDC), DSW(0xDEDA), DSW(0x365E), DSW(0xC07A), DSB(0x4088), video_draw_seg(), DSW(0xE2FE), DSW(0x3D66), DSW(0x3D64));
+    /* S3.3: the vector records of the shown page (a fresh line record) and how many of them show an hr pixel: the HUD window, the map window, the whole frame */
+    long vh[3] = { 0, 0, 0 }, vt[3] = { 0, 0, 0 };
+    const struct { int x0, y0, x1, y1; } vw[3] = { { 48, 2, 271, 90 }, { 74, 110, 150, 169 }, { 0, 0, 319, 199 } };
+    for (int k = 0; k < 3; k++)
+        for (int y = vw[k].y0; y <= vw[k].y1; y++)
+            for (int x = vw[k].x0; x <= vw[k].x1; x++) {
+                const Shadow *r = &sh_shown[y * 320 + x];
+                if (!(r->src == SRC_VEC || r->src == SRC_VECHR) || r->val != pg[y * 320 + x]) continue;
+                vt[k]++;
+                if (r->src != SRC_VECHR || !lvec_shown) continue;
+                const int nn = enh_cv.n;
+                bool any = false;
+                for (int ky = 0; ky < nn && !any; ky++)
+                    for (int kx = 0; kx < nn; kx++)
+                        if (lvec_shown[(size_t)(enh_cv.fy + y * nn + ky) * enh_cv.lw + (size_t)(enh_cv.fx + x * nn + kx)] & 0x100) { any = true; break; }
+                if (any) vh[k]++;
+            }
+    fprintf(f, "frame %d tv %ld/%ld map %ld/%ld rmfd=%x lmfdoff=%x cockpit=%x view=%x p4088=%x draw=%x master=%x site=%x unit=%x hudv %ld/%ld mapv %ld/%ld allv %ld/%ld\n", frame, c3[0], cn[0], c3[1], cn[1],
+            DSW(0xDFDC), DSW(0xDEDA), DSW(0x365E), DSW(0xC07A), DSB(0x4088), video_draw_seg(), DSW(0xE2FE), DSW(0x3D66), DSW(0x3D64), vh[0], vt[0], vh[1], vt[1], vh[2], vt[2]);
     fflush(f);
     const char *e = getenv("F117_PROBE_FRAMES");
     for (const char *t = e; t && *t; ) {
@@ -486,6 +525,7 @@ void enh_window_save(int x, int y, int w, int h)
     const int n = enh_cv.n;
     free(store.rec); free(store.l3); free(store.lv);
     store.valid = false;
+    if (hr_tracing) { s32 t[4] = { enh_cv.fx + n * x, enh_cv.fy + n * y, enh_cv.fx + n * (x + w) - 1, enh_cv.fy + n * (y + h) - 1 }; hr_trace(13, 4, t); }   /* S3.3: 13 = the window's vector layer is saved (the reference keeps its lines) */
     store.rec = malloc((size_t)w * h * sizeof(Shadow));
     store.l3 = malloc((size_t)w * h * n * n * sizeof(u16));
     store.lv = malloc((size_t)w * h * n * n * sizeof(u16));
@@ -504,6 +544,7 @@ void enh_window_restore(int x, int y, int w, int h)
 {
     if (!store.valid || !l3d_work || store.x != x || store.y != y || store.w != w || store.h != h || store.n != enh_cv.n) return;
     const int n = enh_cv.n;
+    if (hr_tracing) { s32 t[4] = { enh_cv.fx + n * x, enh_cv.fy + n * y, enh_cv.fx + n * (x + w) - 1, enh_cv.fy + n * (y + h) - 1 }; hr_trace(12, 4, t); }   /* S3.3: 12 = the vector layer of this rectangle is replaced by the saved one (the reference clears its lines) */
     for (int j = 0; j < h; j++) memcpy(sh_work + (y + j) * 320 + x, store.rec + (size_t)j * w, (size_t)w * sizeof(Shadow));
     for (int j = 0; j < h * n; j++) {
         const size_t at = (size_t)(enh_cv.fy + y * n + j) * enh_cv.lw + (size_t)(enh_cv.fx + x * n);

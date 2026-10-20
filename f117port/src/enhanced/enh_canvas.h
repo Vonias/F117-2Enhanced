@@ -32,6 +32,7 @@ extern bool enh_shadow_on;      /* the writers of video/mgraphic.c record into t
 typedef enum { ENH_ROUTE_ART, ENH_ROUTE_3D } EnhRoute;
 extern int enh_route;           /* set by the 3D pass (S2.2): primitives written now are 3D-layer writes */
 extern int enh_stamp_hold;      /* S3.1: > 0 = 3D-route 1x writes are recorded in the shadow but not stamped into the 3D layer */
+extern int enh_mirror;          /* S3.3: > 0 = the 1x line()s now repeat a line on the other page (hud_line_clip both): no shadow record, no hr line */
 extern int enh_vec_hold;        /* S3.1: > 0 = the 1x vector writes now are an hr emitter's footprint (hr_obj.c emits the N x look) */
 
 /* Active = VGA mode 13h is set and the canvas is on. */
@@ -49,6 +50,7 @@ void enh_frame_to_canvas(int *x, int *y);
 /* Shadow records (mgraphic.c hooks). seg:off is the written byte of page 0 or 1; val the byte written. */
 void enh_rec_line(u16 seg, u16 off, u8 val);            /* line / pixel: a vector write (or a 3D line inside a 3D pass); call BEFORE the write */
 void enh_rec_fill(u16 seg, u16 off, u8 val);            /* polygon / sprite pixel: 3D inside a 3D pass, else plain art; call AFTER the write */
+void enh_rec_vecfill(u16 seg, u16 off, u8 old, u8 val);   /* S3.3: a polygon pixel as an hr vector fill's footprint (after the write; old = the replaced page value) */
 bool enh_page_tracked(u16 seg);                         /* page 0 or page 1 (video_page_seg(1)): the pages with shadow records */
 void enh_page_cleared(u16 seg);                         /* a whole page was overwritten: its records are void */
 /* S2.2: a pixel of the faithful 3D raster (1359 spans / lines) that the hr back end mirrors: shadow only (without an open hr pass it is
@@ -57,6 +59,7 @@ void enh_rec_3d(u16 seg, u16 off, u8 val);
 bool enh_rec_remap(u16 seg, u16 off, u8 old, u8 val, u8 (*f)(u8));   /* S3.2: an in-place recolour (FLIR ramp) of a 3D pixel: its layer block follows; false = record it as art */
 void enh_rec_span3d(u16 seg, u16 off, int len);         /* the same for len page bytes from off */
 bool enh_shadow_vechr(u16 off, u8 *val);                /* S3.1: the work record of off is an hr vector emitter's footprint (its value in *val) */
+bool enh_shadow_under(u16 off, u8 *under, bool *under3d);   /* S3.3: what the vector record of off replaced (the page value, or a 3D pixel) */
 bool enh_shadow_3d(u16 off, u8 *val);                   /* the work record of off is a 3D write (its value in *val) */
 void enh_pass_clear(int x0, int y0, int x1, int y1);    /* a 3D pass opens: shadow, 3D and vector layer cleared inside its window (frame px) */
 void enh_blit(u16 sseg, int sx, int sy, u16 dseg, int dx, int dy, int w, int h);   /* S3.2 fix: blit_rect between pages: records and layers follow (page 1 work <-> page 0 shown); from an art page: records voided */
@@ -67,13 +70,22 @@ void enh_layers_reset(void);                            /* every record and laye
 #define ENH_REC_SPAN3D(seg, off, len) do { if (enh_shadow_on) enh_rec_span3d((seg), (u16)(off), (len)); } while (0)
 void enh_flip(unsigned bytes);                          /* the page flip copied `bytes` of page 1 to page 0 */
 
-#define ENH_REC_LINE(seg, off, val) do { if (enh_shadow_on) enh_rec_line((seg), (u16)(off), (u8)(val)); } while (0)
+#define ENH_REC_LINE(seg, off, val) do { if (enh_shadow_on && enh_mirror <= 0) enh_rec_line((seg), (u16)(off), (u8)(val)); } while (0)
 #define ENH_REC_FILL(seg, off, val) do { if (enh_shadow_on) enh_rec_fill((seg), (u16)(off), (u8)(val)); } while (0)
 
 /* Layers for the emitters (S2.2, S3.x): 16-bit entries, bit 8 = written, low byte = DAC index (bit 9: a stamped 1x value, see
  * enh_rec_fill). Work = being drawn, shown = flipped. */
 void enh_vec_put(int lx, int ly, u8 c);                 /* S3.1: a vector-layer pixel of an hr emitter, layer coordinates; marks its page pixel */
 void enh_compose_work(u32 *out, const u8 *page, const u32 *pal);   /* S3.1 test aid: the frame being drawn composed from `page` */
+/* S3.3: the HUD / MFD vector lines at N x (hr_obj.c). A hook pair around the 1x drawing of line() / hud_tick_strip(): begin decides (true = the 1x footprint is held, SRC_VECHR) and end
+ * draws the same line / ticks thin (max(1, N/2) layer pixels, Decisions Q3) in the vector layer, from the 1x endpoints (frame pixels incl. draw_off). */
+bool enh_hud_begin(u16 seg, int colour, int x1, int y1, int x2, int y2, u16 draw_off);
+void enh_hud_end_line(void);
+bool enh_hud_begin_tick(u16 seg, int colour);
+void enh_hud_tick(int x, int y, int dir, int npx);      /* npx = 1: one dash of the scale line; 2 / 3: a horizontal tick of that many pixels from x towards dir */
+void enh_hud_end_tick(void);
+bool enh_adi_begin(u16 seg, int colour);               /* S3.3: the ADI's horizon polygon (cockpit_draw_adi): begin holds its 1x footprint ... */
+void enh_adi_end(const s16 *pts, int n);                /* ... end fills the same polygon at N x (window = DS:2293 x 2295 at the draw offset, vertices in window pixels) */
 u16 *enh_layer3d(void);
 u16 *enh_layer_vec(void);
 

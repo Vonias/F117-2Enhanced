@@ -37,13 +37,17 @@ class Hrd:
     def events(self):
         """yield (type, args list) over the trace"""
         t, i, n = self.trace, 0, len(self.trace)
-        sizes = {0: 5, 1: 4, 2: 3, 3: 1, 4: 7, 6: 0, 8: 4, 9: 11, 10: 4}      # 7 (a sprite: x0 y0 dw dh sw sh + sw sh source words), 5 (a polygon) are variable
+        sizes = {0: 5, 1: 4, 2: 3, 3: 1, 4: 7, 6: 0, 8: 4, 9: 11, 10: 4, 12: 4, 13: 4}      # 7 (a sprite: x0 y0 dw dh sw sh + sw sh source words), 5 (a polygon) are variable
         while i < n:
             ty = int(t[i])
             if ty == 5:
                 m = int(t[i + 4])
                 yield 5, t[i + 1:i + 5 + 2 * m]
                 i += 5 + 2 * m
+            elif ty == 11:                                   # S3.3: the ADI polygon in the vector layer: colour n wx0 wy0 wx1 wy1 + n doubled vertices
+                m = int(t[i + 2])
+                yield 11, t[i + 1:i + 7 + 2 * m]
+                i += 7 + 2 * m
             elif ty == 7:
                 m = int(t[i + 5]) * int(t[i + 6])
                 yield 7, t[i + 1:i + 7 + m]

@@ -76,7 +76,7 @@ def main():
             bad += 1
             continue
         rows = parse(out)
-        tot = {k: sum(d.get(k, 0) for d in rows) for k in ('checked', 'hr', 'stamped', 'agree', 'differ', 'empty', 'inner', 'inner_differ', 'fpx', 'fdiffer', 'finner', 'finner_differ', 'vtot', 'vhit',
+        tot = {k: sum(d.get(k, 0) for d in rows) for k in ('checked', 'hr', 'stamped', 'agree', 'differ', 'empty', 'inner', 'inner_differ', 'fpx', 'fdiffer', 'finner', 'finner_differ', 'vtot', 'vhit', 'vthin', 'vstray',
                                                        'sprites', 'sprite_px', 'dots', 'lines', 'line_px', 'wpx', 'w3d', 'tpx', 'tramp')}
         px = tot['agree'] + tot['differ']
         agree = tot['agree'] / px if px else 0.0
@@ -107,6 +107,20 @@ def main():
                 bad += 1
             if d['id'].startswith('tvfire') and d['sprites'] < 4 or d['id'].startswith('tvsmoke') and d['sprites'] < 16:
                 print('  scenario %s: %d TV sprites at N x' % (d['id'], d['sprites']))
+                bad += 1
+        # S3.3: the HUD / MFD scenes (hud_*: tapes with tick strips, frame, reticle, pitch ladder, ILS, scope, map lines and arcs, the ADI polygon): the vector lines are thin at N > 1
+        # (`vthin`: footprint blocks that show less than the line colour everywhere; the ADI polygon only along its edge), show only the line colour or what it replaced (`vstray`),
+        # and at N = 1 the frame is the 1x frame (checked below for every scenario)
+        huds = [d for d in rows if d['id'].startswith('hud_')]
+        if len(huds) < 12 or sum(d['lines'] for d in huds) < 200 or sum(d['vtot'] for d in huds) < 2500:
+            print('  the HUD / MFD scenes (hud_*) did not exercise the vector lines: %d scenes, %d lines, %d footprints' % (len(huds), sum(d['lines'] for d in huds), sum(d['vtot'] for d in huds)))
+            bad += 1
+        for d in huds:
+            if d['vstray']:
+                print('  scenario %s: %d vector footprint blocks show a colour that is neither the line nor what it replaced' % (d['id'], d['vstray']))
+                bad += 1
+            if n > 1 and d['vtot'] and (d['vthin'] < 20 if d['id'].startswith('hud_adi') else d['vthin'] < 0.95 * d['vtot']):
+                print('  scenario %s: only %d of %d vector footprint blocks are thin at N = %d' % (d['id'], d['vthin'], d['vtot'], n))
                 bad += 1
         views = [d for d in rows if d['id'].startswith('view_')]
         if len(views) < 13 or tot['sprites'] < 50 or tot['dots'] < 8 or tot['lines'] < 50 or tot['vtot'] < 300:

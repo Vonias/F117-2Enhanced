@@ -141,6 +141,26 @@ def scenarios(T, st):
         T.add('view_boxes%d' % small, 's1', base + objects(st) + pose + ['poke w 0xC07A 0', 'poke b 0x294B %d' % small, 'call view_frame',
               'call r3d_project_point %d %d 60' % (w(px + 3), w(py - 40)), 'call hud_target_box 150 45 9 0 %d' % 0x29, 'call hud_draw_diamond',
               'call r3d_project_point %d %d 90' % (w(px - 6), w(py - 70)), 'call hud_target_box 140 40 12 1 %d' % 0x0A])
+    # (n) S3.3: the cockpit's vector graphics: the HUD (7898 / the asm HUD 10A8: tapes with their tick strips, frame, reticle, pitch ladder with its rungs and labels), the ILS needles,
+    # the ADI (its horizon polygon), the map MFD's route line / arcs / blips and the scope. The frame loop's own order after view_frame: hud_overlay_frame, hud_draw_far, hud_side_strips, cockpit_draw_adi.
+    # Attitudes: pitched and rolled so that the ladder has slanted rungs; levels [294A] 0 / 1 / 2 (full, reduced, frame only), the small view [294B].
+    att = lambda pitch, roll, hdg: ['poke w 0x2DEE %d' % w(hdg), 'poke w 0x2DF0 %d' % w(pitch), 'poke w 0x2DF2 %d' % w(roll), 'poke w 0xC07A 0']
+    # (the 3D camera looks level-ish and down, so the sky / ground band edges stay out of the way; the HUD's pitch and roll words are set after view_frame, which is where the
+    # HUD reads them)
+    for name, level, small, pitch, roll in (('l0', 0, 0, 0x0180, 0x0900), ('l1', 1, 0, -0x0200, -0x0700), ('l2', 2, 0, 0x0100, 0x0600), ('l0s', 0, 1, -0x0100, 0x0A00), ('lvl', 0, 0, 0, 0)):
+        T.add('hud_%s' % name, 's1', base + ['call pal_flight_load'] + att(-0x0300, 0, 0x1200) + ['poke b 0x294A %d' % level, 'poke b 0x294B %d' % small, 'poke w 0x2DF6 %d' % (2300 if level == 0 else 640),
+              'call view_frame', 'poke w 0x2DF0 %d' % w(pitch), 'poke w 0x2DF2 %d' % w(roll), 'call hud_overlay_frame', 'call hud_draw_front', 'call hud_side_strips 1'])
+    for k, (pitch, roll) in enumerate(((0x0180, 0x0900), (-0x0200, -0x0700), (0x0040, 0x2000))):
+        T.add('hud_adi%d' % k, 's1', base + ['call pal_flight_load', 'poke b 0x4088 1'] + att(pitch, roll, 0x0600) + ['call view_frame', 'call hud_overlay_frame', 'call cockpit_draw_adi'])
+    T.add('hud_ils', 's1', base + ['call pal_flight_load'] + att(-0x0300, 0, 0) + ['poke b 0x294A 0', 'poke b 0x294B 0', 'poke b 0x9B05 4', 'call view_frame', 'poke w 0x2DF0 %d' % w(0x0080), 'poke w 0x2DF2 %d' % w(0x0500), 'call hud_overlay_frame', 'call hud_ils'])
+    T.add('hud_scope', 's1', base + ['call pal_flight_load'] + att(0, 0, 0x0800) + ['poke b 0x4088 1', 'poke w 0xDEDA 1', 'call view_frame', 'call hud_overlay_frame', 'call mfd_scope_draw 1'])
+    # the map: terrain, blips (2x2 dots and single pixels), a route line over the window (clipped to it, drawn on both pages), dotted and solid arcs, the saved background
+    for z in (3, 6):
+        mx, my = w(st['C0A4']), w(st['C0B2'])
+        T.add('hud_map%d' % z, 's1', base + ['call pal_flight_load', 'poke b 0x4088 1', 'poke b 0x4080 %d' % z, 'call mfd_map_redraw %d %d' % (mx, my), 'call gfx_set_fg 15',
+              'call mfd_map_line %d %d %d %d' % (w(st['C0A4'] - 3000), w(st['C0B2'] - 1000), w(st['C0A4'] + 3000), w(st['C0B2'] + 1000)), 'call gfx_set_fg 10',
+              'call mfd_map_line %d %d %d %d' % (w(st['C0A4'] - 500), w(st['C0B2'] + 2500), w(st['C0A4'] + 600), w(st['C0B2'] - 2500)),
+              'call mfd_map_arc %d %d 900 11 0 0 255' % (mx, my), 'call mfd_map_arc %d %d 1800 12 1 0 200' % (mx, my)])
 
 
 # S3.1: the view modes whose main 3D view is drawn through r3d_scene_draw (view_frame): cockpit, clean front, rear, left, right, the outside / chase / TV-like

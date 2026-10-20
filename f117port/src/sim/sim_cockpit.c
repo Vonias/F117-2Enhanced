@@ -2,6 +2,7 @@
  * reloaded, the MFD icons. */
 #include "sim/sim.h"
 #include "sim/sim_priv.h"
+#include "enhanced/enh_canvas.h"   /* ENH: S3.3 */
 
 /* 0000:91A4 cockpit_keyblit: colour 0 is transparent; from the picture page (segment [E558]) to the back page; BlitCtx at DS:4062 (+ two bytes at 407A / 407B) */
 void cockpit_keyblit(int dx, int dy, int sx, int sy, int w, int h, int clip)
@@ -82,7 +83,9 @@ void cockpit_draw_adi(void)
     }
     pts[0] = a[0]; pts[1] = c[0]; pts[2] = b[0]; pts[3] = d[0];
     pts[4] = b[1]; pts[5] = d[1]; pts[6] = a[1]; pts[7] = c[1];
+    const bool enh_a = enh_shadow_on && enh_adi_begin(video_draw_seg(), 1);   /* ENH: S3.3, the horizon polygon is filled again at N x */
     poly_fill_far(ctx, 4, pts, 1);
+    if (enh_a) enh_adi_end(pts, 4);   /* ENH: S3.3 */
     DSW(0x2293) = 0x13F;
     DSW(0x2295) = 0xC7;
     offset_set(0);

@@ -44,7 +44,8 @@ def parse(path):
         f = l.split()
         if len(f) > 5 and f[0] == 'frame':
             t, m = f[3].split('/'), f[5].split('/')
-            rows.append((int(f[1]), int(t[0]), int(t[1]), int(m[0]), int(m[1])))
+            v = [x.split('/') for k, x in zip(f, f[1:]) if k in ('hudv', 'mapv', 'allv')]        # S3.3: vector records shown from the vector layer / all (HUD, map, frame)
+            rows.append((int(f[1]), int(t[0]), int(t[1]), int(m[0]), int(m[1])) + tuple(int(q) for a in v for q in a))
     return rows
 
 
