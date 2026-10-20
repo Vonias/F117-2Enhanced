@@ -158,6 +158,31 @@ HUD line endpoints are integers computed at 1× (centre of the 1× pixel → lay
   byte for byte; N = 1: layer == page for all 2.51 M checked 3D pixels (99.1 % drawn by the hr back end, the rest stamped); N = 2 / 3 / 4:
   95.7 / 94.3 / 94.0 % of layer pixels agree with their 1× pixel, 99.98 / 99.96 / 99.94 % away from edges (tolerance 90 % and 99.5 %).
 
+### 2.8 As built (S3.1): the objects on top of the scene, and the views
+* File `enhanced/hr_obj.c`. Every object keeps its faithful 1x drawing (page, shadow records); a hook before it asks for a hold and a hook after it draws
+  the same object from B85D's hr point `enh_hr_pt` (layer px, sub-pixel; `size` = the sprite size recomputed at N x, rule R1):
+  | Object (original) | Hook | N x look |
+  |---|---|---|
+  | smoke billboards (9ACA B, queue DCC0, 1AD6 via DF08) | `enh_bill_size`, `enh_bill_note` (before `r3d_queue_insert`), `enh_bill_pending` (before `r3d_sprite_main`), `sprite()` | the original sprite bitmap scaled to `|0x100 N / d|`-based size with the column / row DDA of `sprite_scaled` (source k = floor(i sw / dw)), centred on the hr point, into the **3D layer** |
+  | explosion 1A85 (A17E S3, after the pass) | `enh_expl_pending`, `sprite()` | the same; the 1x writes are recorded as 3D writes (route 3D during the call) and the pixels go into the layer of the last pass |
+  | far unit / projectile dots (9ACA D, E: `hud_line_view` of one point) | `enh_dot_begin/end` | an N x N block centred on the hr point (the apparent size of the 1x dot), 3D layer |
+  | cannon tracers (A17E S2) | `enh_tracer_p0`, `enh_tracer_begin/end` | thin line (`max(1, N/2)`, Q3) between the hr points, **vector layer** |
+  | target boxes / hexagons B3E6, the diamond B339 (A17E S4, `hud_ping_label`) | `enh_box_begin/end`, `enh_diamond_end` | the outline at hr centre +- N x the 1x half sizes, thin, vector layer, clipped to the `hud_line_win` window |
+  Vector lines are clipped with a 64-bit port of the 1001 clip core (`clip_core`, same Cohen-Sutherland and rounding block) and drawn with the 1x Bresenham of
+  MGRAPHIC slot 31 on layer coordinates, so at N = 1 they are the original pixels.
+* Decision: the dots are in the 3D layer, not the vector layer (DESIGN 2.5 said "thin into a vector layer"): they are drawn inside the pass, so later polygons must
+  cover them, and a shrunk dot (N/2 px) would make a gameplay marker smaller than the classic one. Tracers and boxes are thin as 2.6 says.
+* Hold mechanism (`enh_canvas.c`): `enh_stamp_hold` (the 1x pixels of a sprite / dot are recorded as 3D writes but not stamped into the layer) and `enh_vec_hold`
+  (1x line pixels become `SRC_VECHR` records: where no hr pixel lands the compositor shows what was under the line, not the 1x line). `enh_vec_put` is the
+  emitters' pixel: it marks the page pixel of its block `SRC_VECHR` too, so an hr line shows where the 1x line did not reach. Compose rule of 2.5 unchanged otherwise.
+* `HrCtx.have` stays true after `r3d_end_scene` (the window and layer of the last pass on a tracked page), for A17E, which runs after the pass.
+* Views: every mode goes through `r3d_scene_draw` (so one pass, 2.7) and `view_frame`'s keyed blits / strips over the window are page writes that the shadow marks as art
+  (rows 91..106 strip, the corners, 256REAR / LEFT / RIGHT, the nose triangle), so the 3D layer shows through exactly the key-0 pixels. Checked on all of them at N = 1
+  (the composed frame equals the page for the 13 view scenes) and at N = 2..4 (art blocks unchanged, interior blocks agree).
+* Not yet: the sprites of the TV camera window (`r3d_sprite_tv`, the fire / smoke objects ids >= 25h) keep their stamped 1x pixels (S3.2); the HUD lines (S3.3).
+* Tests: `--hr-check` now also composes the frame (`fpx fdiffer finner finner_differ`, vector footprints `vtot vhit`, object counts) and `--hr-dump` writes `<id>.cmp` (the
+  composed canvas) and the vector layer; trace types 7 (sprite + source bitmap), 8 (dot), 9 (clipped vector line) let `r3d_ref.py` judge them with its independent rule.
+
 ## 3 (b) The wider view
 
 ### 3.1 Canvas geometry (window of any aspect)
@@ -313,8 +338,9 @@ inputs) run only from `host_pump` in real time, never in a display pass: sound t
 | `r3d_poly_add_edge`, `r3d_poly_finish`, `r3d_line_emit` | `render3d/r3d_clip.c` | mirror into the hr back end | S2.2 |
 | `band_points` / `bands` | `render3d/r3d_sky.c` | hr band quads | S2.2 |
 | `hz_draw`, `poly_fill_far` | `render3d/edge2d.c` | hr polygon | S2.2 |
-| `r3d_project_point` | `sim/sim_objovl.c` | hr sx/sy; extended range when wide and route 3D | S3.1, S3.4 |
-| `r3d_draw_world_objects`, `obj_overlay_frame` | `render3d/r3d_world.c`, `sim/sim_objovl.c` | route markers (3D vs HUD blocks) | S3.1 |
+| `r3d_project_point` | `sim/sim_objovl.c` | hr sx/sy (+ invalid on early return); extended range when wide and route 3D | S2.2, S3.1, S3.4 |
+| `r3d_draw_world_objects` (B billboards, D/E dots), `obj_overlay_frame` (S2 tracers, S3 explosion), `hud_target_box`, `hud_draw_diamond` | `render3d/r3d_world.c`, `sim/sim_objovl.c` | `enh_bill_size`, `enh_dot_begin/end`, `enh_tracer_*`, `enh_expl_pending`, `enh_box_*` (2.8) | S3.1 |
+| `sprite`, `r3d_queue_billboard`, `r3d_draw_queued` | `render3d/r3d_scene.c` | `enh_sprite_begin/end`, `enh_bill_note`, `enh_bill_pending` (2.8) | S3.1 |
 | `mfd_view_render`, `map_render_terrain` | `sim/sim_mfdview.c`, `render3d/r3d_terrain.c` | none expected (DB71 hook covers them); verify | S3.2 |
 | `r3d_cull_core`, `r3d_frustum_test` | `r3d_scene.c`, `r3d_object.c` | widen by kx/ky in wide display passes | S3.4 |
 | `r3d_draw_terrain` | `render3d/r3d_terrain.c` | wide cell table in wide display passes | S3.4 |

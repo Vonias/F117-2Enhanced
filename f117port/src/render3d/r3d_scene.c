@@ -305,7 +305,7 @@ void r3d_draw_queued(void)
         if (DSW((u16)(rec + 8)) & 0x8000) { DSW(0xC030) = 1; v = 0; } else { DSW(0xC030) = 0; v = DSW(0x9874); }
         DSW(0xC044) = v; DSW(0xC042) = v;
         u16 t = DSW((u16)(rec + 8));
-        if (t & 0x0400) { if (enh_shadow_on) enh_bill_pending(rec); r3d_sprite_main(DSS((u16)(rec + 0x10)), DSS((u16)(rec + 0x12)), DSS((u16)(rec + 0x14)), (s16)(t & 7)); continue; }
+        if (t & 0x0400) { if (enh_shadow_on) enh_bill_pending(rec) /* ENH: S3.1 */; r3d_sprite_main(DSS((u16)(rec + 0x10)), DSS((u16)(rec + 0x12)), DSS((u16)(rec + 0x14)), (s16)(t & 7)); continue; }
         DSB(0x4894) = DSB((u16)(rec + 4));
         DSW(0x4956) = t & 0x7FFF;
         DSW(0x4964) = DSW((u16)(rec + 0xA)); DSW(0x4966) = DSW((u16)(rec + 0xC)); DSW(0x4968) = DSW((u16)(rec + 0xE));

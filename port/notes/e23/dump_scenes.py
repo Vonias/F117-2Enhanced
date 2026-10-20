@@ -14,6 +14,12 @@ Writes into OUT (default work/e23):
                         place where grid and fine differ most (the question of DESIGN Q2)
   contact_scenes.png    the same for the other scenes (runway, low terrain, targets close up, a cockpit frame, TV and map windows)
 The render test draws only the 3D passes (and, for view_frame scenes, the cockpit art of the page); the HUD lines are not part of it.
+
+S3.1: `--views` dumps the whole composed frame of the view_* scenes (every view mode: sprites, dots, tracers, target boxes, the keyed cockpit art) instead:
+  <scene>_classic.png   the faithful 320x200 page scaled N x N nearest (the same scene run with the DAC of the flight palette)
+  <scene>_hr.png        what the compositor shows with the 3D layer, the vector layer and the shadow plane (<id>.cmp of the port, hr_pass.c frame_check)
+  contact_views.png     classic | hr for every view mode
+The scenes run with `call pal_flight_load` first (the mission's flight palette as the game loads it; the golden scenes keep the start-up palette, S2.3 note).
 """
 import os, shutil, subprocess, sys
 import numpy as np
@@ -65,6 +71,74 @@ def run_mode(exe, game, gwork, out, n, mode, scenes):
     return wd
 
 
+def read_cmp(path):
+    """DIR/<id>.cmp: s32 lw, lh; the DAC (6-bit); lh rows of lw palette indices -> (index image, 8-bit RGB palette)"""
+    raw = open(path, 'rb').read()
+    lw, lh = np.frombuffer(raw, '<i4', 2)
+    dac = np.frombuffer(raw, np.uint8, 768, 8).reshape(256, 3).astype(np.uint16)
+    idx = np.frombuffer(raw, np.uint8, int(lw * lh), 8 + 768).reshape(lh, lw)
+    return idx, ((dac << 2) | (dac >> 4)).astype(np.uint8)
+
+
+def run_views(exe, game, gwork, out, n, scenes):
+    wd = os.path.join(out, '_run_views')
+    shutil.rmtree(wd, ignore_errors=True)
+    os.makedirs(wd)
+    for f in os.listdir(gwork):
+        if f.startswith('s1.'):
+            shutil.copyfile(os.path.join(gwork, f), os.path.join(wd, f))
+    keep, blocks, cur = set(scenes), [], None
+    for line in open(os.path.join(gwork, 'scn.txt')).read().splitlines():
+        if line.startswith('scn '):
+            cur = [line, 'call pal_flight_load'] if line.split()[1] in keep else None
+        elif cur is not None:
+            cur.append(line)
+            if line == 'end':
+                blocks.append('\n'.join(cur))
+                cur = None
+    open(os.path.join(wd, 'scn.txt'), 'w').write('\n'.join(blocks) + '\n')
+    env = dict(os.environ)
+    env.pop('F117_CLASSIC', None)
+    env['F117_ENH_ARGS'] = '--render-scale %d --hr-dump %s' % (n, os.path.abspath(wd).replace('\\', '/'))
+    r = subprocess.run([exe, '--render-test', wd, '--game-dir', game], env=env, capture_output=True, text=True, timeout=900)
+    if r.returncode != 0:
+        raise SystemExit('the port failed (views): %s' % (r.stdout[-400:] + r.stderr[-400:]))
+    return wd
+
+
+def main_views(exe, game, gwork, out, n, scenes):
+    if not scenes:
+        scenes = [l.split()[1] for l in open(os.path.join(gwork, 'scn.txt')).read().splitlines() if l.startswith('scn view_')]
+    wd = run_views(exe, game, gwork, out, n, scenes)
+    rows = []
+    for sc in scenes:
+        pc, ph = os.path.join(wd, sc + '.cmp'), os.path.join(wd, sc + '.hrd')
+        if not os.path.exists(pc):
+            print('dump-scenes: scene %s is not in scn.txt' % sc)
+            continue
+        idx, pal = read_cmp(pc)
+        page = Hrd(ph).page
+        classic = pal[np.repeat(np.repeat(page, n, 0), n, 1)]
+        hr = pal[idx]
+        Image.fromarray(classic).save(os.path.join(out, sc + '_classic.png'))
+        Image.fromarray(hr).save(os.path.join(out, sc + '_hr.png'))
+        tw = 640
+        th = tw * classic.shape[0] // classic.shape[1]
+        rows.append([labelled(Image.fromarray(v).resize((tw, th), Image.BILINEAR), '%s  %s  (x%d, reduced to %d px wide)' % (sc, k, n, tw)) for k, v in (('classic', classic), ('hr', hr))])
+    if rows:
+        H = sum(r[0].height for r in rows)
+        sheet = Image.new('RGB', (2 * 640, H), (20, 20, 24))
+        y = 0
+        for r in rows:
+            for i, c in enumerate(r):
+                sheet.paste(c, (i * 640, y))
+            y += r[0].height
+        sheet.save(os.path.join(out, 'contact_views.png'))
+        print('dump-scenes: %s (%d scenes)' % (os.path.join(out, 'contact_views.png'), len(rows)))
+    shutil.rmtree(wd, ignore_errors=True)
+    return 0
+
+
 def labelled(img, text, h=22):
     im = Image.new('RGB', (img.width, img.height + h), (20, 20, 24))
     ImageDraw.Draw(im).text((6, 2), text, fill=(235, 235, 235), font=font(15))
@@ -91,6 +165,9 @@ def main():
     n, scenes = 4, None
     if '--n' in argv:
         i = argv.index('--n'); n = int(argv[i + 1]); del argv[i:i + 2]
+    views = '--views' in argv
+    if views:
+        argv.remove('--views')
     if '--scenes' in argv:
         i = argv.index('--scenes'); scenes = argv[i + 1].split(','); del argv[i:i + 2]
     if len(argv) < 3:
@@ -102,6 +179,8 @@ def main():
         print('dump-scenes: no scn.txt in %s (run the render3d_golden ctest first)' % gwork)
         return 77
     os.makedirs(out, exist_ok=True)
+    if views:
+        return main_views(exe, game, gwork, out, n, scenes)
     groups = [('contact_dither.png', DITHER_SCENES), ('contact_scenes.png', OTHER_SCENES)]
     if scenes:
         groups = [('contact_selected.png', scenes)]
