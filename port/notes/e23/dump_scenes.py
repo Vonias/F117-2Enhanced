@@ -147,7 +147,7 @@ TVMAP_SCENES = ['tvclose0', 'tvfire0', 'tvflir0', 'tvsmoke0', 'tvsimple_flir0', 
 def main_tvmap(exe, game, gwork, out, n, scenes):
     """S3.2: the TV camera window (right MFD sensor page, x 169..245, y 110..169) and the map MFD window (left MFD, x 74..150, y 110..169) of the tv* / map* scenes:
     <scene>_classic.png / <scene>_hr.png are the window cut out of the frame at N x (the classic 1x page scaled N x N, and what the compositor shows with the 3D layer);
-    contact_tv_map.png has both side by side at twice that size for every scene."""
+    contact_tv_map_scenes.png has both side by side at twice that size for every scene."""
     scenes = scenes or TVMAP_SCENES
     wd = run_views(exe, game, gwork, out, n, scenes)
     rows, bad = [], 0
@@ -177,8 +177,8 @@ def main_tvmap(exe, game, gwork, out, n, scenes):
         for i, r in enumerate(rows):
             for j, c in enumerate(r):
                 sheet.paste(c, (j * cw, i * ch))
-        sheet.save(os.path.join(out, 'contact_tv_map.png'))
-        print('dump-scenes: %s (%d scenes)' % (os.path.join(out, 'contact_tv_map.png'), len(rows)))
+        sheet.save(os.path.join(out, 'contact_tv_map_scenes.png'))
+        print('dump-scenes: %s (%d scenes)' % (os.path.join(out, 'contact_tv_map_scenes.png'), len(rows)))
     shutil.rmtree(wd, ignore_errors=True)
     return 1 if bad or not rows else 0
 

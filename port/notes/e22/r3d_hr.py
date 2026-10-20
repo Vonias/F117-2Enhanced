@@ -91,8 +91,8 @@ def main():
               % (tot['fpx'], tot['fdiffer'], tot['finner'], tot['finner_differ'], tot['sprites'], tot['sprite_px'], tot['dots'], tot['lines'], tot['line_px'], tot['vtot'], tot['vhit']))
         # S3.2: the TV camera window (two passes in one window, sprites, the FLIR tint) and the map MFD window (ortho terrain, the backup page 2 round trip): at the end of
         # the scenario the window is still shown from the 3D layer (a 3D record equal to the page) except the labels, the tint covered it, and the passes were really two
-        tvm = [d for d in rows if d['id'].startswith(('tvclose', 'tvfire', 'tvflir', 'tvsmoke', 'tvsimple', 'map'))]
-        if len(tvm) < 29 or sum(d.get('sprites', 0) for d in tvm) < 60:
+        tvm = [d for d in rows if d['id'].startswith(('tv', 'map'))]
+        if len(tvm) < 35 or sum(d.get('sprites', 0) for d in tvm) < 60:
             print('  the TV / map scenes did not run (%d scenes, %d sprites)' % (len(tvm), sum(d.get('sprites', 0) for d in tvm)))
             bad += 1
         for d in tvm:

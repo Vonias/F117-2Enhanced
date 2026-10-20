@@ -576,6 +576,7 @@ void blit_rect(int spage, int sx, int sy, int dpage, int dx, int dy, int w, int 
         ys++;
         yd++;
     } while (--rows);
+    if (enh_shadow_on) enh_blit(page_seg(spage), sx, sy, page_seg(dpage), dx, dy, w, h);   /* ENH: S3.2, the records and layers follow the copy */
 }
 
 /* ------------------------------------------------------------------ key-colour blits (slots 17-20, 71-74): spec section 8 */

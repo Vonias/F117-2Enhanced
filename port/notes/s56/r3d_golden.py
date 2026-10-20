@@ -94,9 +94,9 @@ def scenarios(T, st):
     # (i) the map MFD terrain (119C: ortho map mode) at every zoom
     for z in range(2, 10):
         T.add('map%d' % z, 's1', base + ['call map_render_terrain 0x4014 %d %d %d' % (w(st['C0A4'] // 2), w(0x4000 - st['C0B2'] // 2), 9 - z)])
-    # (j) the TV camera (bf71) on sites and units
+    # (j) the TV camera (bf71) on sites and units ([4088] = 1 as in the game: the TV pass page is the page MGRAPHIC draws on, page 1)
     for n, i in enumerate(sites[:6]):
-        T.add('tv%d' % n, 's1', base + ['call mfd_view_render %d %d %d 0 0 0 0 %d 0' % (i[2], i[0], i[1], (1, 3, 4)[n % 3])])
+        T.add('tv%d' % n, 's1', base + ['poke b 0x4088 1', 'call mfd_view_render %d %d %d 0 0 0 0 %d 0' % (i[2], i[0], i[1], (1, 3, 4)[n % 3])])
     # (j2) S3.2: the TV camera's other paths. [034A] != 0 takes the terrain path; mode 1 with zshift != 0 is the close view of an air target (two passes in
     # the window: the terrain, then the object, with fire puffs when the unit record has bit 20h); zshift 0 draws the smoke column of the site instead.
     # The FLIR tint ([43B2], C6DE) recolours the finished window through the green ramp 98h-9Fh. The flight palette is the mission's real one.

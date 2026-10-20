@@ -196,10 +196,15 @@ if(Python3_Interpreter_FOUND)
              $<TARGET_FILE:f117> ${CMAKE_CURRENT_SOURCE_DIR}/../Game ${CMAKE_CURRENT_BINARY_DIR}/r3d_hr_ref ${CMAKE_CURRENT_BINARY_DIR}/r3d_golden 2 4)
     add_test(NAME r3d_hr_dump COMMAND Python3::Interpreter ${CMAKE_CURRENT_SOURCE_DIR}/../port/notes/e23/dump_scenes.py
              $<TARGET_FILE:f117> ${CMAKE_CURRENT_SOURCE_DIR}/../Game ${CMAKE_CURRENT_BINARY_DIR}/r3d_golden ${CMAKE_CURRENT_BINARY_DIR}/r3d_hr_dump --scenes dither_close0,runway0)
-    # S3.2: the TV camera and map MFD windows cut out of the frame at N = 4 (classic vs hr PNGs and contact_tv_map.png; the files go to work/e32 when run by hand)
+    # S3.2: the TV camera and map MFD windows cut out of the frame at N = 4 (classic vs hr PNGs and contact_tv_map_scenes.png of the poked scenes; the files go to work/e32 when run by hand)
     add_test(NAME r3d_hr_tvmap COMMAND Python3::Interpreter ${CMAKE_CURRENT_SOURCE_DIR}/../port/notes/e23/dump_scenes.py
              $<TARGET_FILE:f117> ${CMAKE_CURRENT_SOURCE_DIR}/../Game ${CMAKE_CURRENT_BINARY_DIR}/r3d_golden ${CMAKE_CURRENT_BINARY_DIR}/r3d_hr_tvmap --tvmap --n 4)
-    set_tests_properties(r3d_hr_tvmap PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 600 DEPENDS render3d_golden PASS_REGULAR_EXPRESSION "dump-scenes: .*contact_tv_map.png")
+    set_tests_properties(r3d_hr_tvmap PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 600 DEPENDS render3d_golden PASS_REGULAR_EXPRESSION "dump-scenes: .*contact_tv_map_scenes.png")
+    # S3.2 fix: the REAL game path (port/notes/e32/real_path.py): the scripted chain into a Libya mission, the right MFD on the TV page showing the home airbase, the left on
+    # the map; after every page flip how much of the two windows is shown from the 3D layer (--mfd-probe). By hand: add `N --png work/e32` for contact_tv_map.png.
+    add_test(NAME r3d_hr_realpath COMMAND Python3::Interpreter ${CMAKE_CURRENT_SOURCE_DIR}/../port/notes/e32/real_path.py
+             $<TARGET_FILE:f117> ${CMAKE_CURRENT_SOURCE_DIR}/../Game ${CMAKE_CURRENT_BINARY_DIR}/r3d_hr_realpath 4)
+    set_tests_properties(r3d_hr_realpath PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 900 PASS_REGULAR_EXPRESSION "r3d-realpath OK")
     set_tests_properties(r3d_hr_ref PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 1800 DEPENDS render3d_golden PASS_REGULAR_EXPRESSION "r3d-ref OK")
     set_tests_properties(r3d_hr_dump PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 600 DEPENDS render3d_golden PASS_REGULAR_EXPRESSION "dump-scenes: .*contact_selected.png")
     set_tests_properties(r3d_hr_n1 r3d_hr_n234 PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 1800 DEPENDS render3d_golden PASS_REGULAR_EXPRESSION "r3d-hr OK")

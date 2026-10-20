@@ -1,12 +1,14 @@
 /* The Enhanced canvas, layers, shadow plane and compositor (see enh_canvas.h; DESIGN.md 2.1, 2.5, 3.1, 3.2). */
 #include "enhanced/enh_canvas.h"
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "enhanced/enhanced.h"
 #include "enhanced/hr.h"
 #include "enhanced/sandbox.h"
+#include "render3d/r3d.h"
 #include "platform/vga.h"
 #include "video/video.h"
 
@@ -249,6 +251,8 @@ void enh_page_cleared(u16 seg)
     if (seg == 0xA000) memset(sh_shown, 0, PAGE_PIXELS * sizeof(Shadow));
 }
 
+static void probe_flip(void);
+
 void enh_flip(unsigned bytes)
 {
     size_t n = bytes < PAGE_PIXELS ? bytes : PAGE_PIXELS;
@@ -257,6 +261,7 @@ void enh_flip(unsigned bytes)
         memcpy(l3d_shown, l3d_work, layer_px * sizeof(u16));
         memcpy(lvec_shown, lvec_work, layer_px * sizeof(u16));
     }
+    if (enh.mfd_probe[0] && !enh_sbx) probe_flip();
 }
 
 /* ---------------------------------------------------------------- compose (2.5) */
@@ -344,6 +349,69 @@ void enh_compose_work(u32 *out, const u8 *page, const u32 *pal)
     compose_canvas(out, page, ident, pal, true, &cs);
 }
 
+/* ---------------------------------------------------------------- --mfd-probe (S3.2 test aid) */
+
+/* After every page flip: the pixels of the TV window (x 169..245, y 110..169) and of the map window (x 74..150, y 110..169) of the shown page that come from a 3D
+ * record equal to the page (so the compositor shows the 3D layer there) against the window size; F117_PROBE_FRAMES=a,b writes the composed shown canvas of those frames
+ * to PREFIX_<frame>.raw (s32 lw, lh, then lw * lh XRGB u32 as composed, then the same frame as the classic 1x page scaled N x N). */
+static void probe_flip(void)
+{
+    static int frame;
+    static FILE *f;
+    if (!f) { char p[1100]; snprintf(p, sizeof p, "%s.txt", enh.mfd_probe); f = fopen(p, "w"); if (!f) return; }
+    const u8 *pg = seg_ptr(0xA000);
+    const struct { int x0, y0, x1, y1; } w[2] = { { 169, 110, 245, 169 }, { 74, 110, 150, 169 } };
+    long c3[2] = { 0, 0 }, cn[2] = { 0, 0 };
+    for (int k = 0; k < 2; k++)
+        for (int y = w[k].y0; y <= w[k].y1; y++)
+            for (int x = w[k].x0; x <= w[k].x1; x++) {
+                const Shadow *r = &sh_shown[y * 320 + x];
+                cn[k]++;
+                if (r->src == SRC_3D && r->val == pg[y * 320 + x]) c3[k]++;
+            }
+    fprintf(f, "frame %d tv %ld/%ld map %ld/%ld rmfd=%x lmfdoff=%x cockpit=%x view=%x p4088=%x draw=%x master=%x site=%x unit=%x\n", frame, c3[0], cn[0], c3[1], cn[1],
+            DSW(0xDFDC), DSW(0xDEDA), DSW(0x365E), DSW(0xC07A), DSB(0x4088), video_draw_seg(), DSW(0xE2FE), DSW(0x3D66), DSW(0x3D64));
+    fflush(f);
+    const char *e = getenv("F117_PROBE_FRAMES");
+    for (const char *t = e; t && *t; ) {
+        char *end;
+        long v = strtol(t, &end, 10);
+        if (end == t) break;
+        if (v == frame && layer_px) {
+            u32 *img = malloc(layer_px * sizeof(u32));
+            u32 pal[256];
+            u8 dac[768];
+            dac_get(0, 256, dac);
+            for (int i = 0; i < 256; i++) {
+                u32 r = (u32)dac[3 * i] << 2, g = (u32)dac[3 * i + 1] << 2, b = (u32)dac[3 * i + 2] << 2;
+                pal[i] = ((r | r >> 6) << 16) | ((g | g >> 6) << 8) | (b | b >> 6);
+            }
+            static u16 ident[PAGE_PIXELS];
+            for (int i = 0; i < PAGE_PIXELS; i++) ident[i] = (u16)i;
+            if (img) {
+                const ComposeSrc cs = { sh_shown, l3d_shown, lvec_shown };
+                compose_canvas(img, pg, ident, pal, true, &cs);
+                char p[1100];
+                snprintf(p, sizeof p, "%s_%04d.raw", enh.mfd_probe, frame);
+                FILE *o = fopen(p, "wb");
+                if (o) {
+                    s32 hd[2] = { enh_cv.lw, enh_cv.lh };
+                    fwrite(hd, 4, 2, o);
+                    fwrite(img, 4, layer_px, o);
+                    static Shadow none[PAGE_PIXELS];                       /* no records: the 1x page scaled N x N, the classic picture of the same frame */
+                    const ComposeSrc c1 = { none, l3d_shown, lvec_shown };
+                    compose_canvas(img, pg, ident, pal, true, &c1);
+                    fwrite(img, 4, layer_px, o);
+                    fclose(o);
+                }
+                free(img);
+            }
+        }
+        t = *end == ',' ? end + 1 : end;
+    }
+    frame++;
+}
+
 /* ---------------------------------------------------------------- hr vector emitters (S3.1) */
 
 /* A vector layer pixel (layer coordinates) of an hr emitter. The page pixel whose block it lies in becomes a vector record whose "nothing emitted" look is what
@@ -368,6 +436,41 @@ void enh_vec_put(int lx, int ly, u8 c)
         }
     }
     lvec_work[(size_t)ly * enh_cv.lw + lx] = (u16)(0x100 | c);
+}
+
+/* ---------------------------------------------------------------- page-to-page blits (S3.2 fix) */
+
+/* The shadow has two planes: work (the page being drawn, page 1) and shown (page 0, the displayed one; enh_flip copies work to shown for the bytes the flip copies).
+ * The game also moves rectangles between the pages with blit_rect: every frame view_frame copies the two MFD windows (map x 74.., TV x 169.., 77x60) from the draw page to the
+ * other page, and the flip does not cover those rows, so without this the displayed page's records for the MFDs were never refreshed and the windows showed as 1x pixels.
+ * enh_blit follows such a blit: records and the three layers go along between two tracked pages (page 0 = shown, page 1 = work); a blit from any other page (the
+ * picture page 2: panels, fonts, saved backgrounds) is art, so the records under its destination rectangle are voided. */
+void enh_blit(u16 sseg, int sx, int sy, u16 dseg, int dx, int dy, int w, int h)
+{
+    const bool dt = enh_page_tracked(dseg);
+    if (!dt || !sh_work || w <= 0 || h <= 0 || sx < 0 || sy < 0 || dx < 0 || dy < 0 || sx + w > 320 || dx + w > 320 || sy + h > 200 || dy + h > 200) return;
+    const bool d_shown = dseg == 0xA000, s_shown = sseg == 0xA000, st = enh_page_tracked(sseg);
+    Shadow *dsh = d_shown ? sh_shown : sh_work;
+    if (!st) {                                                   /* from an art page: void the destination records */
+        for (int j = 0; j < h; j++) memset(&dsh[(dy + j) * 320 + dx], 0, (size_t)w * sizeof(Shadow));
+        return;
+    }
+    if (s_shown == d_shown) return;                              /* the same plane */
+    const Shadow *ssh = s_shown ? sh_shown : sh_work;
+    const int n = enh_cv.n, lw = enh_cv.lw;
+    u16 *dl3 = d_shown ? l3d_shown : l3d_work, *dlv = d_shown ? lvec_shown : lvec_work;
+    const u16 *sl3 = s_shown ? l3d_shown : l3d_work, *slv = s_shown ? lvec_shown : lvec_work;
+    const bool lay = layer_px != 0;
+    for (int j = 0; j < h; j++) {
+        memcpy(&dsh[(dy + j) * 320 + dx], &ssh[(sy + j) * 320 + sx], (size_t)w * sizeof(Shadow));
+        if (!lay) continue;
+        for (int k = 0; k < n; k++) {
+            const size_t so = (size_t)(enh_cv.fy + (sy + j) * n + k) * lw + (size_t)(enh_cv.fx + sx * n);
+            const size_t d = (size_t)(enh_cv.fy + (dy + j) * n + k) * lw + (size_t)(enh_cv.fx + dx * n);
+            memcpy(dl3 + d, sl3 + so, (size_t)w * n * sizeof(u16));
+            memcpy(dlv + d, slv + so, (size_t)w * n * sizeof(u16));
+        }
+    }
 }
 
 /* ---------------------------------------------------------------- window store (S3.2) */

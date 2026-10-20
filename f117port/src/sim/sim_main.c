@@ -12,7 +12,7 @@
 #include "sim/simtest.h"
 #include "enhanced/sandbox.h"   /* ENH: S2.4 */
 
-SimTest sim_test = { .frames_left = -1, .dive_at = -1 };
+SimTest sim_test = { .frames_left = -1, .dive_at = -1, .select_at = -1 };
 
 static inline u8 *pilot_rec(void) { return far_mp(ds_far(0x98F4)); }
 #define PILOT(o) (*(u16 *)(pilot_rec() + (o)))
@@ -421,6 +421,24 @@ static void frame_floor(void)
  * gear up, and Esc is pressed on the host keyboard as a player would after the impact. The flight model and the sim step then crash it
  * for real: AGL 0 with crashes on = mission_end(1), END (killed in action), START. Before the fix of 2026-10-16 that Esc made the
  * chain quit to the desktop when VGAME ended. */
+/* PORT, test aid of the real-path run (F117_VGAME_SELECT=N, S3.2): after N frames the nearest site (not the home base, no ring-only entries) is the selected target, as
+ * the designation of key n would make it, so the right MFD's TV page (key /) shows the close view of it. */
+static void chain_select(void)
+{
+    int best = -1;
+    long bd = 0x7FFFFFFF;
+    for (int i = 1; i < (s16)DSW(0xC0B4); i++) {
+        u16 s = (u16)(0xB2A4 + 16 * i);
+        if (DSW(s) == 0 || DSW((u16)(s + 2)) == 0) continue;
+        long dx = (s16)(DSW(s) - DSW(0xC0A4)), dy = (s16)(DSW((u16)(s + 2)) - DSW(0xC0B2)), d = dx * dx + dy * dy;
+        if (d < bd) { bd = d; best = i; }
+    }
+    if (getenv("F117_VGAME_SITE")) best = atoi(getenv("F117_VGAME_SITE"));                   /* or a given site index */
+    if (best < 0) return;
+    DSW(0x3D66) = (u16)best;
+    if (DSW(0x3D68) == 0) DSW(0x3D68) = 0xFFFF;
+}
+
 static void chain_dive(void)
 {
     DSL(0xBA10) = 4288u * 32;                            /* x, y in world units (level units x 32, y runs north here) */
@@ -453,6 +471,7 @@ void frame_loop_body(void)
         DSB(0x262A) = 1;
         sim_input_flight();
         sim_frame_step();
+        if (sim_test.select_at >= 0 && sim_test.select_at-- == 0) chain_select();   /* PORT: test aid (F117_VGAME_SELECT) */
         if (sim_test.dive_at >= 0 && sim_test.dive_at-- == 0) chain_dive();   /* PORT: test aid (F117_VGAME_DIVE) */
         if (sim_test.frames_left >= 0 && sim_test.frames_left-- == 0) mission_end(getenv("F117_VGAME_END") ? atoi(getenv("F117_VGAME_END")) : 7);   /* PORT: F117_VGAME_END=0 lands (the chain test hands END a finished mission) */
     } while (DSB(0xE552) == 0);
@@ -527,6 +546,7 @@ int vgame_main(const char *tail)
     (void)tail;
     placeholder_note_vgame_pass();
     if (!sim_test.active && getenv("F117_VGAME_FRAMES")) sim_test.frames_left = atoi(getenv("F117_VGAME_FRAMES"));   /* PORT: the scripted chain run ends the flight after N frames */
+    if (!sim_test.active && getenv("F117_VGAME_SELECT")) sim_test.select_at = atoi(getenv("F117_VGAME_SELECT"));          /* PORT: ... or selects the nearest site as the target */
     if (!sim_test.active && getenv("F117_VGAME_DIVE")) sim_test.dive_at = atoi(getenv("F117_VGAME_DIVE"));            /* PORT: ... or dives into the sea after N frames */
     vgame_start();
     return 0;

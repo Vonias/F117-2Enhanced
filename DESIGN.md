@@ -204,6 +204,14 @@ HUD line endpoints are integers computed at 1× (centre of the 1× pixel → lay
   `mapfp3/6/9` (flight palette), `mapbg3/6/9` (save, a line over the window, restore); all with `pal_flight_load` and `[4088] = 1` (the TV pass page is MGRAPHIC's draw page, as in the game).
   `--hr-check` prints `wpx w3d tpx tramp` (the window still shown from the 3D layer; the tinted window in the green ramp); `r3d_hr.py` asserts them.
 
+* **Real-game fix (S3.2, after the first U1):** in play the TV and map windows were 1x pixels because of how the game moves them: the MFDs are drawn into the draw page (page 1)
+  and `view_frame` copies the two 77x60 windows to the other page with `blit_rect` every frame, while the flip (`enh_flip`) copies the shadow only for the rows of the 3D window.
+  The shown plane's records for the MFD rows were therefore never refreshed. `enh_blit` (hook in `blit_rect`) now follows a blit between the tracked pages: records and the
+  3D / vector layers go along (page 1 work -> page 0 shown and back); a blit from any other page (picture page 2) is art and voids the destination records. Measured in the
+  real path (`port/notes/e32/real_path.py`, `--mfd-probe`): TV window shown from the 3D layer 0 % -> 93.7..95.7 %, map window 0 % -> 99.1 %. The golden scenes `tv0..5` ran with
+  the pass page != the draw page (not a state of the game: `[4088]` = 1 = draw page = pass page there); they now poke `[4088]` = 1 and are 98..100 % shown.
+  Test aids: `--mfd-probe PREFIX` (+ `F117_PROBE_FRAMES`), `F117_VGAME_SELECT` / `F117_VGAME_SITE` (select a site as the target, like the designation of key `n`).
+
 ## 3 (b) The wider view
 
 ### 3.1 Canvas geometry (window of any aspect)

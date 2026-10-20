@@ -50,6 +50,7 @@ int enh_parse_arg(int argc, char **argv, int i)
         if (!enh.classic) enh.sandbox_test = n < 0 ? 0 : n > 1000 ? 1000 : n;
         return 2;
     }
+    if (!strcmp(argv[i], "--mfd-probe") && i + 1 < argc) { if (!enh.classic) snprintf(enh.mfd_probe, sizeof enh.mfd_probe, "%s", argv[i + 1]); return 2; }
     if (!strcmp(argv[i], "--sandbox-hash") && i + 1 < argc) { snprintf(enh.sandbox_hash, sizeof enh.sandbox_hash, "%s", argv[i + 1]); return 2; }
     return 0;
 }

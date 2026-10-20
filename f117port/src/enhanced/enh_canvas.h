@@ -59,6 +59,7 @@ void enh_rec_span3d(u16 seg, u16 off, int len);         /* the same for len page
 bool enh_shadow_vechr(u16 off, u8 *val);                /* S3.1: the work record of off is an hr vector emitter's footprint (its value in *val) */
 bool enh_shadow_3d(u16 off, u8 *val);                   /* the work record of off is a 3D write (its value in *val) */
 void enh_pass_clear(int x0, int y0, int x1, int y1);    /* a 3D pass opens: shadow, 3D and vector layer cleared inside its window (frame px) */
+void enh_blit(u16 sseg, int sx, int sy, u16 dseg, int dx, int dy, int w, int h);   /* S3.2 fix: blit_rect between pages: records and layers follow (page 1 work <-> page 0 shown); from an art page: records voided */
 void enh_window_save(int x, int y, int w, int h);       /* S3.2: the map MFD's backup page 2 gets the window's records and layers (one slot) */
 void enh_window_restore(int x, int y, int w, int h);    /* S3.2: ... and gives them back where the window is copied back from the backup */
 void enh_layers_reset(void);                            /* every record and layer cleared (the render test, per scenario) */

@@ -15,6 +15,7 @@ typedef struct {
     char hr_dump[1024];  /* --hr-dump DIR (implies --hr-check): per render-test scenario DIR/<id>.hrd: the hr trace, the layer, the page (S2.3) */
     int  sandbox_test;   /* --sandbox-test N: N sandboxed display passes per VGAME frame, nothing shown (S2.4 test; S4.1 runs them for real) */
     char sandbox_hash[1024];   /* --sandbox-hash FILE: a hash of the sim state per VGAME frame (test aid; also in --classic, it changes nothing) */
+    char mfd_probe[1024];      /* --mfd-probe PREFIX (S3.2 test aid): per page flip PREFIX.txt gets how much of the TV and map windows is shown from the 3D layer; F117_PROBE_FRAMES=a,b dumps those frames */
 } EnhOptions;
 
 extern EnhOptions enh;
