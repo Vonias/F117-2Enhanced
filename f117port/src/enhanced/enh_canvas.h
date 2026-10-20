@@ -32,7 +32,6 @@ extern bool enh_shadow_on;      /* the writers of video/mgraphic.c record into t
 typedef enum { ENH_ROUTE_ART, ENH_ROUTE_3D } EnhRoute;
 extern int enh_route;           /* set by the 3D pass (S2.2): primitives written now are 3D-layer writes */
 extern int enh_stamp_hold;      /* S3.1: > 0 = 3D-route 1x writes are recorded in the shadow but not stamped into the 3D layer */
-extern int enh_mirror;          /* S3.3: > 0 = the 1x line()s now repeat a line on the other page (hud_line_clip both): no shadow record, no hr line */
 extern int enh_vec_hold;        /* S3.1: > 0 = the 1x vector writes now are an hr emitter's footprint (hr_obj.c emits the N x look) */
 
 /* Active = VGA mode 13h is set and the canvas is on. */
@@ -70,7 +69,7 @@ void enh_layers_reset(void);                            /* every record and laye
 #define ENH_REC_SPAN3D(seg, off, len) do { if (enh_shadow_on) enh_rec_span3d((seg), (u16)(off), (len)); } while (0)
 void enh_flip(unsigned bytes);                          /* the page flip copied `bytes` of page 1 to page 0 */
 
-#define ENH_REC_LINE(seg, off, val) do { if (enh_shadow_on && enh_mirror <= 0) enh_rec_line((seg), (u16)(off), (u8)(val)); } while (0)
+#define ENH_REC_LINE(seg, off, val) do { if (enh_shadow_on) enh_rec_line((seg), (u16)(off), (u8)(val)); } while (0)
 #define ENH_REC_FILL(seg, off, val) do { if (enh_shadow_on) enh_rec_fill((seg), (u16)(off), (u8)(val)); } while (0)
 
 /* Layers for the emitters (S2.2, S3.x): 16-bit entries, bit 8 = written, low byte = DAC index (bit 9: a stamped 1x value, see
@@ -79,6 +78,7 @@ void enh_vec_put(int lx, int ly, u8 c);                 /* S3.1: a vector-layer 
 void enh_compose_work(u32 *out, const u8 *page, const u32 *pal);   /* S3.1 test aid: the frame being drawn composed from `page` */
 /* S3.3: the HUD / MFD vector lines at N x (hr_obj.c). A hook pair around the 1x drawing of line() / hud_tick_strip(): begin decides (true = the 1x footprint is held, SRC_VECHR) and end
  * draws the same line / ticks thin (max(1, N/2) layer pixels, Decisions Q3) in the vector layer, from the 1x endpoints (frame pixels incl. draw_off). */
+extern bool enh_hud_hr_off;                             /* test aid (--compose-test): no hr look for the 1x lines */
 bool enh_hud_begin(u16 seg, int colour, int x1, int y1, int x2, int y2, u16 draw_off);
 void enh_hud_end_line(void);
 bool enh_hud_begin_tick(u16 seg, int colour);

@@ -179,7 +179,7 @@ HUD line endpoints are integers computed at 1× (centre of the 1× pixel → lay
 * Views: every mode goes through `r3d_scene_draw` (so one pass, 2.7) and `view_frame`'s keyed blits / strips over the window are page writes that the shadow marks as art
   (rows 91..106 strip, the corners, 256REAR / LEFT / RIGHT, the nose triangle), so the 3D layer shows through exactly the key-0 pixels. Checked on all of them at N = 1
   (the composed frame equals the page for the 13 view scenes) and at N = 2..4 (art blocks unchanged, interior blocks agree).
-* Not yet: the HUD lines (S3.3). The TV camera sprites were done in S3.2 (2.9).
+* The HUD lines were done in S3.3 (2.10). The TV camera sprites were done in S3.2 (2.9).
 * Tests: `--hr-check` now also composes the frame (`fpx fdiffer finner finner_differ`, vector footprints `vtot vhit`, object counts) and `--hr-dump` writes `<id>.cmp` (the
   composed canvas) and the vector layer; trace types 7 (sprite + source bitmap), 8 (dot), 9 (clipped vector line) let `r3d_ref.py` judge them with its independent rule.
 
@@ -199,7 +199,7 @@ HUD line endpoints are integers computed at 1× (centre of the 1× pixel → lay
   (trace type 10 = the tinted rectangle).
 * Map MFD: the finished window is saved to the backup page 2 (`mfd_map_save_bg`) and copied back every frame (`mfd_map_restore_bg`) to erase the aircraft marker. The blit is a
   plain page write, so `enh_window_save` / `enh_window_restore` (one slot, not in display passes) keep the window's records and layers beside the backup. The map's route lines,
-  symbols and text are art or 1x vector writes (S3.3 turns the lines into vector-layer lines).
+  symbols and text are art or 1x vector writes (S3.3, 2.10, turns the lines into vector-layer lines).
 * Tests: golden scenes `tvclose / tvfire / tvflir / tvsmoke / tvsimple_flir` x 3 sites (two passes, fire puffs with live puff state, smoke column, FLIR, one-pass simple path),
   `mapfp3/6/9` (flight palette), `mapbg3/6/9` (save, a line over the window, restore); all with `pal_flight_load` and `[4088] = 1` (the TV pass page is MGRAPHIC's draw page, as in the game).
   `--hr-check` prints `wpx w3d tpx tramp` (the window still shown from the 3D layer; the tinted window in the green ramp); `r3d_hr.py` asserts them.
@@ -211,6 +211,39 @@ HUD line endpoints are integers computed at 1× (centre of the 1× pixel → lay
   real path (`port/notes/e32/real_path.py`, `--mfd-probe`): TV window shown from the 3D layer 0 % -> 93.7..95.7 %, map window 0 % -> 99.1 %. The golden scenes `tv0..5` ran with
   the pass page != the draw page (not a state of the game: `[4088]` = 1 = draw page = pass page there); they now poke `[4088]` = 1 and are 98..100 % shown.
   Test aids: `--mfd-probe PREFIX` (+ `F117_PROBE_FRAMES`), `F117_VGAME_SELECT` / `F117_VGAME_SITE` (select a site as the target, like the designation of key `n`).
+
+### 2.10 As built (S3.3): the HUD and MFD vector graphics
+
+Every 1x vector line of the cockpit goes through MGRAPHIC `line()` (slot 31): the asm HUD (`hud_draw_front`: frame, reference marks, the pitch ladder's rungs, reticle bars), `7898`
+(`hud_overlay_frame`: designator cross, throttle / sink-rate bars, the ILS needles `hud_ils`, rings), the map MFD (`mfd_map_line`, `mfd_map_arc`, `mfd_map_route`), the scope and the TV
+crosshair, all through `hud_line_clip` -> `line_clip_far` -> `line`. So one hook pair in `line()` routes them all; nothing in the callers changes (`hr_obj.c`, "the HUD and MFD lines").
+* `enh_hud_begin` (before the 1x pixels are written; `line()` after its endpoint swap) decides and holds the footprint (`enh_vec_hold`: the 1x pixels become `SRC_VECHR` records, which show
+  what was under them where no hr pixel lands); `enh_hud_end_line` draws the same line thin in the vector layer: `max(1, N/2)` layer pixels (Q3), brush offset `(N - w) / 2`, from the 1x
+  endpoints (frame pixels incl. `draw_off`). The brush runs through the **1x Bresenham on layer coordinates** (`vbres`, the S3.1 code), so at N = 1 it is the original line pixel for pixel.
+  Horizontal and vertical lines keep the full 1x length (block edge to block edge: ticks and the frame corners join); diagonals run between the block origins plus the brush offset.
+* **Not taken** (they stay the original's pixels, N x N): colour 0 (the HUD's bar gauges draw black / dark lines that erase; also keeps the DAC-index rule: the lines are DAC indices, so the
+  HUD colour sets F4 / Alt-N / the flashes still work), a single point (`hud_pixel`, the map's 2x2 blips and dots: they keep their solid look; an N x N block is also what the S3.1 dots are),
+  lines of a 3D pass (`enh_route` 3D: 3D-layer geometry) and lines inside another emitter's hold (tracers, target boxes, S3.1).
+* `hud_tick_strip` (071A, the airspeed / altitude / heading tapes' scale lines and ticks) writes the page directly: its pixels are now vector records (`TICK_PX`), and `enh_hud_tick` draws
+  the 2- and 3-pixel ticks as thin horizontal lines and every scale-line pixel as a dash as tall as the 1x pixel (the scale line is dotted in the original, every second row).
+* The ADI (`cockpit_draw_adi`, 17A3): its horizon is a filled quadrilateral. `enh_adi_begin/end` hold the `poly_fill` footprint (`enh_rec_vecfill`: the same record as a held line pixel) and fill
+  the polygon again at N x (N >= 2): edges through the vertex-pixel centres, a layer pixel in when its centre is inside or on an edge: a straight horizon instead of the staircase. The
+  bezel on top (`cockpit_keyblit`) and the copy to the other page stay art.
+* **Page 0 and page 1.** The map's lines are drawn on both pages (`hud_line_clip` both), and the step draws the route legs on both pages after the flip. A vector write on page 0 (the displayed
+  page) now belongs to the **shown** plane and layer (`plane_shown`), one on page 1 to the work ones; before, both went to the work plane and the second copy overwrote the first one's
+  `under` with the other page's stale pixel. (3D writes and the other emitters are unchanged.)
+* Test hooks: `--mfd-probe` prints the vector records of the shown page that are shown from the vector layer (`hudv`, `mapv`, `allv` and the HUD elements `tapel`, `taper`, `framel`, `framer`,
+  `centre`; colour 0 excluded) next to the TV / map counts; `--hr-check` adds `vthin` (footprint blocks that show less than the line colour: the lines are thin) and `vstray` (blocks with a
+  colour that is neither the line, nor what it replaced, nor a colour within two original pixels). Trace types for the reference rasteriser: 9 (a clipped vector line, S3.1), 11 (the ADI
+  polygon), 12 / 13 (the map window is saved to / restored from the backup page: the reference keeps and restores its lines).
+* What stays original pixels: all text (tape numbers, ladder labels, messages), the reticle and the tick bitmaps blitted from `256PIT.PIC` (`blit_key`, `cockpit_keyblit`: the flight-path
+  marker, the aircraft marker, the lamps, the panel), the filled bars and boxes (`fill_rows_far`, `hud_fill_rect`: the threat bar, fuel bar, MFD backgrounds).
+* Tests: 12 golden scenes `hud_l0 / l1 / l2 / l0s / lvl` (the HUD at levels 0 / 1 / 2 and the small view, rolled and pitched), `hud_adi0..2`, `hud_ils`, `hud_scope`, `hud_map3 / 6` (route lines,
+  both pages, arcs, the backup round trip); golden total 176, original-vs-port byte for byte. N = 1: 0 differing frame pixels in all 176 scenes; N = 2 / 3 / 4: interior blocks agree
+  99.98 / 99.94 / 99.92 %, every footprint pixel has an hr pixel within one original pixel (4631 of 4631 at N >= 2), `vstray` 0, the lines are thin (`vthin`); the reference rasteriser judges
+  255 lines and polygons of the HUD scenes (52 484 layer pixels at N = 4): gap 0, wrong 0, stray 0. The real game path (`port/notes/e32/real_path.py`, ctest `r3d_hr_realpath`: the scripted
+  chain with F4, v, c, F8, F3, Alt-N): 99.4-99.8 % of the HUD's vector records show a vector-layer pixel (tapes, frame and the ladder / reticle centre 100 %), the map window with the route
+  legs 82 % (the rest are the blips), the scope 100 %.
 
 ## 3 (b) The wider view
 
@@ -371,6 +404,7 @@ inputs) run only from `host_pump` in real time, never in a display pass: sound t
 | `r3d_draw_world_objects` (B billboards, D/E dots), `obj_overlay_frame` (S2 tracers, S3 explosion), `hud_target_box`, `hud_draw_diamond` | `render3d/r3d_world.c`, `sim/sim_objovl.c` | `enh_bill_size`, `enh_dot_begin/end`, `enh_tracer_*`, `enh_expl_pending`, `enh_box_*` (2.8) | S3.1 |
 | `sprite`, `r3d_queue_billboard`, `r3d_draw_queued` | `render3d/r3d_scene.c` | `enh_sprite_begin/end`, `enh_bill_note`, `enh_bill_pending` (2.8) | S3.1 |
 | `mfd_view_render`, `map_render_terrain` | `sim/sim_mfdview.c`, `render3d/r3d_terrain.c` | the DB71 hook covers them; `enh_tv_backdrop`, `enh_pass_continue`, `enh_tint_note` in `mfd_view_render` (2.9) | S3.2 |
+| `line`, `hud_tick_strip`, `poly_fill`, `cockpit_draw_adi` | `video/mgraphic.c`, `sim/sim_cockpit.c` | `enh_hud_begin/_end_line`, `enh_hud_begin_tick/_tick/_end_tick`, `enh_rec_vecfill`, `enh_adi_begin/_end` (2.10) | S3.3 |
 | `r3d_draw_queued` (TV sprite), `poly_fill` mode 3, `mfd_map_save_bg` / `mfd_map_restore_bg` | `render3d/r3d_scene.c`, `video/mgraphic.c`, `sim/sim_mfd.c` | `enh_tv_sprite_pending`, `enh_rec_remap`, `enh_window_save/restore` (2.9) | S3.2 |
 | `r3d_cull_core`, `r3d_frustum_test` | `r3d_scene.c`, `r3d_object.c` | widen by kx/ky in wide display passes | S3.4 |
 | `r3d_draw_terrain` | `render3d/r3d_terrain.c` | wide cell table in wide display passes | S3.4 |

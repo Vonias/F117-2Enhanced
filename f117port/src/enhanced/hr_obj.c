@@ -425,10 +425,11 @@ void enh_diamond_end(int sx, int sy, int colour)
  * map's 2x2 blobs and the dots keep their solid look), lines of the 3D passes (they are 3D-layer geometry), and lines inside another emitter's hold (tracers, boxes). Axis-aligned
  * lines keep the full length of the 1x line (block edge to block edge, so ticks and frame corners join); diagonals run between the block centres. */
 static struct { int x1, y1, x2, y2, c; } hl;
+bool enh_hud_hr_off;
 
 static bool hud_ok(u16 seg, int colour)
 {
-    return colour != 0 && enh_mirror <= 0 && enh_route == ENH_ROUTE_ART && enh_stamp_hold <= 0 && enh_vec_hold <= 0 && enh_page_tracked(seg) && enh_layer_vec() && enh_cv.lw > 0;
+    return !enh_hud_hr_off && colour != 0 && enh_route == ENH_ROUTE_ART && enh_stamp_hold <= 0 && enh_vec_hold <= 0 && enh_page_tracked(seg) && enh_layer_vec() && enh_cv.lw > 0;
 }
 
 /* one line in layer pixels with the brush: the window is the frame; trace type 9 for the reference rasteriser */
@@ -438,7 +439,7 @@ static void hud_seg(s32 x0, s32 y0, s32 x1, s32 y1, u8 c)
     const s32 wx0 = enh_cv.fx, wy0 = enh_cv.fy, wx1 = enh_cv.fx + 320 * n - 1, wy1 = enh_cv.fy + 200 * n - 1;
     vl_w = n / 2 > 1 ? n / 2 : 1;
     vl_o = (n - vl_w) / 2;
-    if (hr_tracing) { s32 t[11] = { x0, y0, x1, y1, c, vl_w, vl_o, wx0, wy0, wx1, wy1 }; hr_trace(9, 11, t); }
+    if (hr_tracing && !(video_draw_seg() == 0xA000 && video_page_seg(1) != 0xA000)) { s32 t[11] = { x0, y0, x1, y1, c, vl_w, vl_o, wx0, wy0, wx1, wy1 }; hr_trace(9, 11, t); }   /* (the reference judges the work layer: a copy on page 0 goes to the shown one) */
     vbres(x0, y0, x1, y1, c, wx0, wy0, wx1, wy1);
 }
 

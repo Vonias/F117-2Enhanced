@@ -159,7 +159,9 @@ int enh_compose_selftest(void)
 {
     if (!enh_canvas_on()) { printf("compose-test: needs the canvas (not --classic)\n"); return 1; }
     test_geometry();
+    enh_hud_hr_off = true;     /* the compositor alone: the 1x lines of this test have no hr look (S3.3 emits one for every line) */
     test_compose();
+    enh_hud_hr_off = false;
     test_layers();
     if (bad) { printf("compose-test: %d failures\n", bad); return 1; }
     printf("compose-test OK: %zu geometries, 8 canvases x 4 frames pixel-exact against the classic frame\n", sizeof geom / sizeof geom[0]);

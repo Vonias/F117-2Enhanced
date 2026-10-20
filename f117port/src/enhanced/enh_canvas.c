@@ -28,7 +28,6 @@ EnhCanvas enh_cv = { 320, 200, 1, 0, 0, 0, 0, 320, 200 };
 bool enh_shadow_on;
 int enh_route;
 int enh_stamp_hold;   /* S3.1: > 0 = the 1x writes of a 3D pass are recorded but not stamped (an hr emitter draws the object itself) */
-int enh_mirror;       /* S3.3 */
 int enh_vec_hold;     /* S3.1: > 0 = the 1x line()/put_pixel writes are an hr emitter's (SRC_VECHR) */
 
 static bool active;
@@ -138,12 +137,17 @@ static void stamp3d(u16 seg, u16 off, u8 val)
         for (int kx = 0; kx < n; kx++) p[kx] = (u16)(0x300 | val);
 }
 
-static void vec_clear_block(u16 off)
+/* S3.3: a vector write on page 0 (the displayed page: the second copy of the map's lines, the route legs the step draws after the flip) belongs to the shown plane and layer, one
+ * on page 1 (the page being drawn) to the work ones. Page 1 aliasing page 0 (a single-page mode) is all work. */
+static inline bool plane_shown(u16 seg) { return seg == 0xA000 && video_page_seg(1) != 0xA000; }
+
+static void vec_clear_block(u16 off, u16 seg)
 {
-    if (!lvec_work) return;
+    u16 *lv = plane_shown(seg) ? lvec_shown : lvec_work;
+    if (!lv) return;
     int x = off % 320, y = off / 320, n = enh_cv.n;
     int bx = enh_cv.fx + x * n, by = enh_cv.fy + y * n;
-    for (int ky = 0; ky < n; ky++) memset(lvec_work + (size_t)(by + ky) * enh_cv.lw + bx, 0, (size_t)n * sizeof(u16));
+    for (int ky = 0; ky < n; ky++) memset(lv + (size_t)(by + ky) * enh_cv.lw + bx, 0, (size_t)n * sizeof(u16));
 }
 
 void enh_rec_line(u16 seg, u16 off, u8 val)
@@ -151,9 +155,10 @@ void enh_rec_line(u16 seg, u16 off, u8 val)
     if (!rec_ok(seg, off)) return;
     Shadow *r = &sh_work[off];
     if (enh_route == ENH_ROUTE_3D) { r->src = SRC_3D; r->val = val; stamp3d(seg, off, val); return; }
+    if (plane_shown(seg)) r = &sh_shown[off];                         /* ENH: S3.3 */
     u8 old = seg_ptr(seg)[off];
     bool fresh = r->src != SRC_NONE && old == r->val;
-    if (!fresh) vec_clear_block(off);
+    if (!fresh) vec_clear_block(off, seg);
     if ((r->src == SRC_VEC || r->src == SRC_VECHR) && fresh) {      /* a line over a line keeps what was below both */
         r->val = val;
         if (enh_vec_hold <= 0) r->src = SRC_VEC;                    /* a classic line over an hr one: shown as its original pixel */
@@ -169,9 +174,9 @@ void enh_rec_line(u16 seg, u16 off, u8 val)
 void enh_rec_vecfill(u16 seg, u16 off, u8 old, u8 val)
 {
     if (!rec_ok(seg, off)) return;
-    Shadow *r = &sh_work[off];
+    Shadow *r = plane_shown(seg) ? &sh_shown[off] : &sh_work[off];
     bool fresh = r->src != SRC_NONE && old == r->val;
-    if (!fresh) vec_clear_block(off);
+    if (!fresh) vec_clear_block(off, seg);
     if ((r->src == SRC_VEC || r->src == SRC_VECHR) && fresh) { r->val = val; return; }
     r->under3d = (u8)(r->src == SRC_3D && fresh);
     r->under = old;
@@ -391,14 +396,18 @@ static void probe_flip(void)
                 cn[k]++;
                 if (r->src == SRC_3D && r->val == pg[y * 320 + x]) c3[k]++;
             }
-    /* S3.3: the vector records of the shown page (a fresh line record) and how many of them show an hr pixel: the HUD window, the map window, the whole frame */
-    long vh[3] = { 0, 0, 0 }, vt[3] = { 0, 0, 0 };
-    const struct { int x0, y0, x1, y1; } vw[3] = { { 48, 2, 271, 90 }, { 74, 110, 150, 169 }, { 0, 0, 319, 199 } };
-    for (int k = 0; k < 3; k++)
+    /* S3.3: the vector records of the shown page (a fresh line record) and how many of them show an hr pixel: the HUD window, the map window, the whole frame, and the elements of the
+     * HUD: the airspeed tape (left), the altitude tape (right), the glass frame (left / right edge), the centre with the pitch ladder and the reticle */
+    enum { VR_HUD, VR_MAP, VR_ALL, VR_TAPEL, VR_TAPER, VR_FRAMEL, VR_FRAMER, VR_CENTRE, VR_N };
+    static const char *const vname[VR_N] = { "hudv", "mapv", "allv", "tapel", "taper", "framel", "framer", "centre" };
+    long vh[VR_N] = { 0 }, vt[VR_N] = { 0 };
+    const struct { int x0, y0, x1, y1; } vw[VR_N] = { { 48, 2, 271, 90 }, { 74, 110, 150, 169 }, { 0, 0, 319, 199 }, { 62, 20, 82, 84 }, { 240, 20, 260, 84 }, { 44, 12, 47, 90 }, { 273, 12, 276, 90 },
+                                                       { 100, 20, 220, 80 } };
+    for (int k = 0; k < VR_N; k++)
         for (int y = vw[k].y0; y <= vw[k].y1; y++)
             for (int x = vw[k].x0; x <= vw[k].x1; x++) {
                 const Shadow *r = &sh_shown[y * 320 + x];
-                if (!(r->src == SRC_VEC || r->src == SRC_VECHR) || r->val != pg[y * 320 + x]) continue;
+                if (!(r->src == SRC_VEC || r->src == SRC_VECHR) || r->val != pg[y * 320 + x] || r->val == 0) continue;   /* (colour 0 lines stay 1x pixels: they erase) */
                 vt[k]++;
                 if (r->src != SRC_VECHR || !lvec_shown) continue;
                 const int nn = enh_cv.n;
@@ -408,8 +417,10 @@ static void probe_flip(void)
                         if (lvec_shown[(size_t)(enh_cv.fy + y * nn + ky) * enh_cv.lw + (size_t)(enh_cv.fx + x * nn + kx)] & 0x100) { any = true; break; }
                 if (any) vh[k]++;
             }
-    fprintf(f, "frame %d tv %ld/%ld map %ld/%ld rmfd=%x lmfdoff=%x cockpit=%x view=%x p4088=%x draw=%x master=%x site=%x unit=%x hudv %ld/%ld mapv %ld/%ld allv %ld/%ld\n", frame, c3[0], cn[0], c3[1], cn[1],
-            DSW(0xDFDC), DSW(0xDEDA), DSW(0x365E), DSW(0xC07A), DSB(0x4088), video_draw_seg(), DSW(0xE2FE), DSW(0x3D66), DSW(0x3D64), vh[0], vt[0], vh[1], vt[1], vh[2], vt[2]);
+    fprintf(f, "frame %d tv %ld/%ld map %ld/%ld rmfd=%x lmfdoff=%x cockpit=%x view=%x p4088=%x draw=%x master=%x site=%x unit=%x hudcol=%x/%x hudlvl=%x", frame, c3[0], cn[0], c3[1], cn[1],
+            DSW(0xDFDC), DSW(0xDEDA), DSW(0x365E), DSW(0xC07A), DSB(0x4088), video_draw_seg(), DSW(0xE2FE), DSW(0x3D66), DSW(0x3D64), DSB(0x2CA0), DSB(0x2CA1), DSB(0x294A));
+    for (int k = 0; k < VR_N; k++) fprintf(f, " %s %ld/%ld", vname[k], vh[k], vt[k]);
+    fprintf(f, "\n");
     fflush(f);
     const char *e = getenv("F117_PROBE_FRAMES");
     for (const char *t = e; t && *t; ) {
@@ -462,19 +473,20 @@ void enh_vec_put(int lx, int ly, u8 c)
     int px = (lx - enh_cv.fx) / n, py = (ly - enh_cv.fy) / n;
     if (px > 319 || py > 199) return;
     const u16 seg = video_draw_seg(), off = (u16)(py * 320 + px);
+    u16 *lv = plane_shown(seg) ? lvec_shown : lvec_work;
     if (enh_page_tracked(seg)) {
-        Shadow *r = &sh_work[off];
+        Shadow *r = plane_shown(seg) ? &sh_shown[off] : &sh_work[off];
         const u8 pv = seg_ptr(seg)[off];
         const bool fresh = r->src != SRC_NONE && r->val == pv;
         if (!(fresh && (r->src == SRC_VEC || r->src == SRC_VECHR))) {
-            if (!fresh) vec_clear_block(off);
+            if (!fresh) vec_clear_block(off, seg);
             r->under3d = (u8)(r->src == SRC_3D && fresh);
             r->under = pv;
             r->src = SRC_VECHR;
             r->val = pv;
         }
     }
-    lvec_work[(size_t)ly * enh_cv.lw + lx] = (u16)(0x100 | c);
+    lv[(size_t)ly * enh_cv.lw + lx] = (u16)(0x100 | c);
 }
 
 /* ---------------------------------------------------------------- page-to-page blits (S3.2 fix) */

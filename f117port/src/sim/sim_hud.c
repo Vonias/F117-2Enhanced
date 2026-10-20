@@ -6,7 +6,6 @@
 
 #include "sim/sim.h"
 #include "sim/sim_priv.h"
-#include "enhanced/enh_canvas.h"   /* ENH: S3.3 */
 
 static inline void *ctx_ptr(u16 ptr_off) { return DSP(DSW(ptr_off)); }              /* the TextCtx a pointer word at DS:ptr_off refers to */
 static inline TextCtx *cur_ctx(void) { return (TextCtx *)ctx_ptr(DSB(0x4088) ? CTX_P1_PTR : CTX_P0_PTR); }
@@ -180,9 +179,7 @@ void hud_line_clip(int x0, int y0, int x1, int y1, int xmin, int xmax, int ymin,
         page_select(DSB(0x4088) < 1);
         color_set(((TextCtx *)ctx_ptr(CTX_P0_PTR))->fg);
         DSW(0x2299) = ax; DSW(0x229D) = cx; DSW(0x229B) = dx; DSW(0x229F) = bx;
-        enh_mirror++;   /* ENH: S3.3, the copy on the other page is not a second line of the shadow plane */
         line_clip_far();
-        enh_mirror--;   /* ENH: S3.3 */
         page_select(DSB(0x4088) >= 1);
     }
     DSW(0x2293) = 0x13F;
