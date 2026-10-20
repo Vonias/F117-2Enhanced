@@ -103,6 +103,19 @@ void enh_expl_pending(int dep)
     pend.valid = true; pend.x = enh_hr_pt.x; pend.y = enh_hr_pt.y; pend.size = q < 0 ? -q : q;
 }
 
+/* S3.2: the TV camera's fire puffs and smoke (objects 24h..: r3d_draw_queued draws their model, then a sprite of size `size` centred on the last edge's first end).
+ * The hr point is that end in the hr edge record; the size is N times the 1x one. */
+void enh_tv_sprite_pending(u16 rec, int size)
+{
+    pend.valid = false;
+    if (!enh_hr.on || size <= 0 || rec < R3D_EDGES || (rec - R3D_EDGES) % 0x18) return;
+    s32 x = 0, y = 0;
+    hr_edge_point(rec, &x, &y);
+    pend.valid = true;
+    pend.x = x - enh_hr.xmin + enh_hr.fx; pend.y = y - enh_hr.ymin + enh_hr.fy;
+    pend.size = (s32)size * enh_cv.n;
+}
+
 /* ---------------------------------------------------------------- sprites (1AD6 / 1A85) */
 
 bool enh_sprite_begin(u16 ctx)
@@ -111,7 +124,7 @@ bool enh_sprite_begin(u16 ctx)
     if (!pend.valid) return false;
     Pending p = pend;
     pend.valid = false;
-    if (!enh_hr.have || !enh_layer3d() || ctx != DSW(0x0344) || p.size <= 0) return false;
+    if (!enh_hr.have || !enh_layer3d() || (ctx != DSW(0x0344) && ctx != DSW(0x4042)) || p.size <= 0) return false;   /* S3.2: the TV window's context too */
     sp_cur = p;
     sp_active = true;
     enh_stamp_hold++;

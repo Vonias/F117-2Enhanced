@@ -7,6 +7,7 @@
 #include "sim/sim.h"
 #include "sim/sim_priv.h"
 #include "sim/sim_stubs.h"
+#include "enhanced/enh_canvas.h"   /* ENH: S3.2 */
 
 #define SITES 0xB2A2                                     /* 16-byte site records */
 #define SITE(i) ((u16)(SITES + 16 * (i)))
@@ -102,11 +103,13 @@ void mfd_map_save_bg(void)
 {
     int page = *(s16 *)ctx_ptr(DSB(0x4088) ? CTX_P1_PTR : CTX_P0_PTR);
     blit_rect(page, 0x4A, 0x6E, *(s16 *)ctx_ptr(CTX_P2_PTR), 0x4A, 0x6E, 0x4D, 0x3C);
+    if (enh_shadow_on) enh_window_save(0x4A, 0x6E, 0x4D, 0x3C);   /* ENH: S3.2, the records and layers go with the backup */
 }
 void mfd_map_restore_bg(void)
 {
     int page = *(s16 *)ctx_ptr(DSB(0x4088) ? CTX_P1_PTR : CTX_P0_PTR);
     blit_rect(*(s16 *)ctx_ptr(CTX_P2_PTR), 0x4A, 0x6E, page, 0x4A, 0x6E, 0x4D, 0x3C);
+    if (enh_shadow_on) enh_window_restore(0x4A, 0x6E, 0x4D, 0x3C);   /* ENH: S3.2 */
 }
 
 /* 0000:8387 mfd_map_redraw: the map around the aircraft (cellx, celly); the terrain is render3d's map_render_terrain (119C) */

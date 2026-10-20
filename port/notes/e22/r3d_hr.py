@@ -13,6 +13,8 @@ value, or the 1x value when the layer is not written) equals the 1x pixel.
          94.3 %, 94.0 % at N = 2, 3, 4), and in "interior" blocks (the 1x pixel and its 8 neighbours have one value, i.e. away from every
          edge) >= 99.5 % overall (measured 99.98 / 99.96 / 99.94 %) and >= 99 % in every scenario with at least 2000 interior layer pixels
          (worst measured 99.37 %, the low-detail horizon). Small TV / probe windows of a few dozen pixels are reported, not judged.
+S3.2 adds the TV camera and map MFD scenes (tvclose / tvfire / tvflir / tvsmoke / tvsimple_flir, map, mapfp, mapbg): the window must still be shown from the 3D layer at the end
+(`w3d` of `wpx`, >= 97 %), two passes where the close view draws two, the TV sprites (fire puffs, smoke) drawn at N x, the FLIR window in the green ramp 98h-9Fh (`tramp` of `tpx`).
 S3.1 adds the whole frame: the work shadow and layers composed over the page of the last pass (sprites, far dots, tracers, target boxes, the keyed art of every view
 mode included), counted per 1x pixel's N x N block (`fpx`, `fdiffer`; "interior" blocks `finner`, `finner_differ`). N = 1: no pixel may differ in any scenario.
 N > 1: interior blocks agree >= 99.5 % overall (and >= 99 % in every scenario with >= 2000 interior layer pixels; measured 99.96 % at N = 4, worst scenario
@@ -75,7 +77,7 @@ def main():
             continue
         rows = parse(out)
         tot = {k: sum(d.get(k, 0) for d in rows) for k in ('checked', 'hr', 'stamped', 'agree', 'differ', 'empty', 'inner', 'inner_differ', 'fpx', 'fdiffer', 'finner', 'finner_differ', 'vtot', 'vhit',
-                                                       'sprites', 'sprite_px', 'dots', 'lines', 'line_px')}
+                                                       'sprites', 'sprite_px', 'dots', 'lines', 'line_px', 'wpx', 'w3d', 'tpx', 'tramp')}
         px = tot['agree'] + tot['differ']
         agree = tot['agree'] / px if px else 0.0
         inner = 1 - tot['inner_differ'] / tot['inner'] if tot['inner'] else 1.0
@@ -87,6 +89,25 @@ def main():
             continue
         print('  frame: %d layer px, %d differ, interior %d / %d differ; objects: %d sprites (%d px), %d dots, %d lines (%d px); vector footprints %d, %d within 1 px'
               % (tot['fpx'], tot['fdiffer'], tot['finner'], tot['finner_differ'], tot['sprites'], tot['sprite_px'], tot['dots'], tot['lines'], tot['line_px'], tot['vtot'], tot['vhit']))
+        # S3.2: the TV camera window (two passes in one window, sprites, the FLIR tint) and the map MFD window (ortho terrain, the backup page 2 round trip): at the end of
+        # the scenario the window is still shown from the 3D layer (a 3D record equal to the page) except the labels, the tint covered it, and the passes were really two
+        tvm = [d for d in rows if d['id'].startswith(('tvclose', 'tvfire', 'tvflir', 'tvsmoke', 'tvsimple', 'map'))]
+        if len(tvm) < 29 or sum(d.get('sprites', 0) for d in tvm) < 60:
+            print('  the TV / map scenes did not run (%d scenes, %d sprites)' % (len(tvm), sum(d.get('sprites', 0) for d in tvm)))
+            bad += 1
+        for d in tvm:
+            if d['wpx'] == 0 or d['w3d'] < 0.97 * d['wpx']:
+                print('  scenario %s: only %d of %d window pixels are shown from the 3D layer' % (d['id'], d['w3d'], d['wpx']))
+                bad += 1
+            if d['id'].startswith(('tvclose', 'tvfire', 'tvflir')) and d['passes'] != 2:
+                print('  scenario %s: %d passes (the close view of an air target draws two)' % (d['id'], d['passes']))
+                bad += 1
+            if d['id'].startswith(('tvflir', 'tvsimple')) and (d['tpx'] == 0 or d['tramp'] < 0.95 * d['tpx']):
+                print('  scenario %s: the FLIR window is not in the green ramp (%d of %d px)' % (d['id'], d['tramp'], d['tpx']))
+                bad += 1
+            if d['id'].startswith('tvfire') and d['sprites'] < 4 or d['id'].startswith('tvsmoke') and d['sprites'] < 16:
+                print('  scenario %s: %d TV sprites at N x' % (d['id'], d['sprites']))
+                bad += 1
         views = [d for d in rows if d['id'].startswith('view_')]
         if len(views) < 13 or tot['sprites'] < 50 or tot['dots'] < 8 or tot['lines'] < 50 or tot['vtot'] < 300:
             print('  the object scenes (view_*) did not exercise sprites / dots / tracers / boxes: %d scenes, %d sprites, %d dots, %d lines, %d footprints'

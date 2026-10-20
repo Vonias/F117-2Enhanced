@@ -351,6 +351,7 @@ void r3d_draw_queued(void)
         s16 size, cls;
         if (DSW(0x4956) == 0x25) { size = (s16)(DSW((u16)(rec + 6)) >> 8); cls = (s16)(DSW((u16)(rec + 6)) & 7); }
         else { u16 k = (u16)(DSW(0x4956) - 0x25); size = DSS((u16)(0x4EA2 + 2 * k)); cls = (s16)(k + 2); }
+        if (enh_shadow_on) enh_tv_sprite_pending(e, size);                 /* ENH: S3.2, the TV sprite at N x */
         r3d_sprite_tv((s16)(DSS(e) - 0xA9), (s16)(DSS((u16)(e + 4)) - 0x6E), size, cls);
     }
 }

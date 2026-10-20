@@ -6,6 +6,8 @@
 #include "sim/sim.h"
 #include "sim/sim_priv.h"
 #include "sim/sim_stubs.h"
+#include "enhanced/enh_canvas.h"   /* ENH: S3.2 */
+#include "enhanced/hr.h"
 
 #define LONG(o) ((s32)DSL(o))
 #define SETL(o, v) (DSL(o) = (u32)(v))
@@ -46,6 +48,7 @@ void mfd_view_ground_bands(int horizon, int mode)
 /* 0000:C6DE mfd_view_flir_tint (spec 2.2): the 77x61 sensor window at offset (x, y) goes through the green MFD ramp */
 void mfd_view_flir_tint(int x, int y)
 {
+    if (enh_shadow_on) enh_tint_note(x, y, 0x4D, 0x3D);   /* ENH: S3.2, the layer follows the recolour (enh_rec_remap in poly_fill) */
     offset_set(pixel_offset(x, y));
     tables_clear();
     DSW(0x2299) = 0; DSW(0x229D) = 0; DSW(0x229B) = 0; DSW(0x229F) = 0x3C;
@@ -158,6 +161,7 @@ void mfd_view_render(unsigned obj_, int x, int y, int z, int a0, int a1, int a2,
     u8 saved294b = DSB(0x294B);
     DSB(0x294B) = 0;
     DSW(0x7D50) = DSW(0x43B2) ? 0x8160 : 0x7F60;
+    if (enh_shadow_on) enh_tv_backdrop(ctx);   /* ENH: S3.2, the 1x backdrop below belongs to the first pass */
     if ((s16)DSW(0x98DE) < 3) {
         DSW(0x7D50) = 0x8360;
         DSW(ctx + 4) = 0x88;
@@ -192,6 +196,7 @@ void mfd_view_render(unsigned obj_, int x, int y, int z, int a0, int a1, int a2,
         sim_r3d_draw_terrain((s16)yaw_n, (s16)DSW(0x9510), LONG(0xB766), LONG(0xB76A), LONG(0xB808));
         if (mode == 1 && zshift != 0) {                                   /* an air target, close view */
             sim_r3d_end_scene();
+            if (enh_shadow_on) enh_pass_continue();   /* ENH: S3.2, the object pass keeps the terrain pass's layer (same window) */
             sim_r3d_begin_scene(DSP(ctx), (s16)yaw_n, (s16)DSW(0x9510), (s16)DSW(0x9512), 0, 0, 0, 0, DSW((u16)(0x4350 + 2 * zi)));
             sim_r3d_place_object(model, -a0, a1, a2, rx, -ry, rz);
             if (DSB((u16)(0xC156 + 0x24 * (u16)DSW(0x3D64))) & 0x20) {

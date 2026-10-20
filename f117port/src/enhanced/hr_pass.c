@@ -94,18 +94,40 @@ static void pass_stats(void)
     hs.passes++;
 }
 
+/* S3.2: the next pass continues the previous one in the same window (the TV camera's close view draws the terrain, then the object, as two passes on one page:
+ * the second must not clear what the first drew). Set by enh_pass_continue, consumed by the next viewport. */
+static bool continue_next;
+void enh_pass_continue(void) { continue_next = true; }
+
+/* S3.2: the TV camera draws its 1x backdrop (the sensor window fill, the sky / ground bands of mfd_view_sky_bands) BEFORE the first pass opens. Opening the window early
+ * makes those writes scene writes (route 3D, stamped as original pixels into the clear layer) that the pass then keeps, so the hr polygons of the object are not cut
+ * to the 1x footprint. ctx = the TV context (DS offset): page word at +0, window rows at +0Eh / +10h, columns at +12h / +14h. */
+void enh_tv_backdrop(u16 ctx)
+{
+    const u16 seg = DSW((u16)(0x85E2 + 2 * DSW(ctx)));
+    const int x0 = DSS((u16)(ctx + 0x12)), y0 = DSS((u16)(ctx + 0x0E)), x1 = DSS((u16)(ctx + 0x14)), y1 = DSS((u16)(ctx + 0x10));
+    if (!enh_page_tracked(seg) || !enh_layer3d() || x0 < 0 || y0 < 0 || x1 > 319 || y1 > 199 || x1 < x0 || y1 < y0) return;
+    enh_pass_clear(x0, y0, x1, y1);
+    enh_route = ENH_ROUTE_3D;
+    enh_hr.have = true;                                       /* the window of the pass that follows (checked in enh_r3d_viewport) */
+    enh_hr.seg = seg; enh_hr.x0 = x0; enh_hr.y0 = y0; enh_hr.x1 = x1; enh_hr.y1 = y1;
+    continue_next = true;
+}
+
 void enh_r3d_viewport(u16 vp)
 {
     (void)vp;
     if (enh_hr.on && enh.hr_check) pass_stats();             /* a pass left open (a nested begin without its end) */
     enh_route = ENH_ROUTE_3D;
     enh_hr.on = false;
+    const u16 seg = DSW(0x85EA);
+    const int x0 = DSS(0x85CA), y0 = DSS(0x85CC), x1 = DSS(0x85CE), y1 = DSS(0x85D0);
+    const bool keep = continue_next && enh_hr.have && enh_hr.seg == seg && enh_hr.x0 == x0 && enh_hr.y0 == y0 && enh_hr.x1 == x1 && enh_hr.y1 == y1;   /* S3.2 */
+    continue_next = false;
     enh_hr.have = false;
     hr_obj_pass_begin();
-    u16 seg = DSW(0x85EA);
     if (!enh_page_tracked(seg)) return;
-    const int x0 = DSS(0x85CA), y0 = DSS(0x85CC), x1 = DSS(0x85CE), y1 = DSS(0x85D0);
-    enh_pass_clear(x0, y0, x1, y1);
+    if (!keep) enh_pass_clear(x0, y0, x1, y1);
     u16 *layer = enh_layer3d();
     if (!layer || x0 < 0 || y0 < 0 || x1 > 319 || y1 > 199 || x1 < x0 || y1 < y0) return;
     HrCtx *h = &enh_hr;
@@ -125,8 +147,8 @@ void enh_r3d_viewport(u16 vp)
     h->have = true;
     last_seg = seg;
     if (hr_tracing) {
-        s32 w[4] = { h->xmin, h->ymin, h->xmax, h->ymax };
-        hr_trace(0, 4, w);
+        s32 w[5] = { h->xmin, h->ymin, h->xmax, h->ymax, keep };   /* the fifth word: the pass keeps the layer of the previous one (S3.2) */
+        hr_trace(0, 5, w);
         if (win_x1 < win_x0) { win_x0 = w[0]; win_y0 = w[1]; win_x1 = w[2]; win_y1 = w[3]; }
         else {
             if (w[0] < win_x0) win_x0 = w[0];
@@ -137,6 +159,18 @@ void enh_r3d_viewport(u16 vp)
     }
     hr_raster_begin();
     hr_clip_begin();
+}
+
+/* S3.2: the FLIR tint (C6DE) recolours the finished window x..x+w-1, y..y+h-1 (frame px) through the green ramp; the reference does the same to its expected colours */
+static int tint_r[4] = { 0, 0, -1, -1 };      /* the last tint, frame px x0 y0 x1 y1 (--hr-check) */
+void enh_tint_note(int x, int y, int w, int h)
+{
+    if (!enh_hr.have) return;
+    const int n = enh_cv.n;
+    tint_r[0] = x; tint_r[1] = y; tint_r[2] = x + w - 1; tint_r[3] = y + h - 1;
+    if (!hr_tracing) return;
+    s32 r[4] = { enh_cv.fx + n * x, enh_cv.fy + n * y, enh_cv.fx + n * (x + w) - 1, enh_cv.fy + n * (y + h) - 1 };
+    hr_trace(10, 4, r);
 }
 
 void enh_r3d_end(void)
@@ -185,6 +219,7 @@ void enh_hr_test_begin(void)
     hr_tracing = enh.hr_dump[0] != 0;
     win_x0 = win_y0 = 0; win_x1 = win_y1 = -1;
     last_seg = 0xA000;
+    tint_r[0] = 0; tint_r[1] = 0; tint_r[2] = -1; tint_r[3] = -1;
 }
 
 /* DIR/<id>.hrd (int32 words unless noted): magic 'HRD1', n, fx, fy, lw, lh, fine, win x0 y0 x1 y1 (layer px, the union of the pass windows;
@@ -224,7 +259,7 @@ static void write_dump(const char *id)
 /* S3.1: the whole frame as the compositor makes it (the work shadow and layers over the page of the last pass) against the 1x page: at N = 1 every
  * pixel must be equal (sprites, dots, tracers, boxes, the keyed art of every view included); at N > 1 the layer pixels of a block equal its 1x pixel except
  * at edges ("interior" blocks: the 3x3 1x pixels around are one value). Also the canvas as RGB for the dumps (DIR/<id>.cmp). */
-static struct { long px, differ, inner, inner_differ, vtot, vhit; } fs;
+static struct { long px, differ, inner, inner_differ, vtot, vhit, tpx, tramp; } fs;
 
 static void frame_check(const char *id)
 {
@@ -264,6 +299,14 @@ static void frame_check(const char *id)
                     if (inner) { fs.inner++; if (!same) fs.inner_differ++; }
                 }
         }
+    for (int y = tint_r[1]; y <= tint_r[3]; y++)      /* S3.2: after a FLIR tint every shown pixel of its window is a colour of the green ramp 98h-9Fh, except the labels (original pixels) */
+        for (int x = tint_r[0]; x <= tint_r[2] && x >= 0 && y >= 0 && y < 200 && x < 320; x++)
+            for (int ky = 0; ky < n; ky++)
+                for (int kx = 0; kx < n; kx++) {
+                    const u32 c = img[(size_t)(enh_cv.fy + y * n + ky) * lw + (size_t)(enh_cv.fx + x * n + kx)];
+                    fs.tpx++;
+                    if (c >= 0x98 && c <= 0x9F) fs.tramp++;
+                }
     if (enh.hr_dump[0] && id) {                       /* the composed canvas with the DAC, for the dump tools */
         u8 dac[768];
         dac_get(0, 256, dac);
@@ -304,8 +347,18 @@ void enh_hr_test_end(const char *dir, const char *id)
     if (!f) return;
     long sp, spx, dots, lines, lpx;
     hr_obj_stats(&sp, &spx, &dots, &lines, &lpx, true);
+    long wpx = 0, w3d = 0;                           /* S3.2: the last pass's window at the end of the scenario: pixels, and those still shown from the 3D layer (a 3D record equal to the page) */
+    if (enh_hr.have) {
+        const u8 *pg = seg_ptr(enh_hr.seg);
+        for (int y = enh_hr.y0; y <= enh_hr.y1; y++)
+            for (int x = enh_hr.x0; x <= enh_hr.x1; x++) {
+                u8 v;
+                wpx++;
+                if (enh_shadow_3d((u16)(y * 320 + x), &v) && v == pg[y * 320 + x]) w3d++;
+            }
+    }
     fprintf(f, "%s n=%d passes=%d checked=%ld hr=%ld stamped=%ld agree=%ld differ=%ld empty=%ld inner=%ld inner_differ=%ld "
-               "fpx=%ld fdiffer=%ld finner=%ld finner_differ=%ld vtot=%ld vhit=%ld sprites=%ld sprite_px=%ld dots=%ld lines=%ld line_px=%ld\n", id, enh_cv.n, hs.passes, hs.checked, hs.hr, hs.stamped,
-            hs.agree, hs.differ, hs.empty, hs.inner, hs.inner_differ, fs.px, fs.differ, fs.inner, fs.inner_differ, fs.vtot, fs.vhit, sp, spx, dots, lines, lpx);
+               "fpx=%ld fdiffer=%ld finner=%ld finner_differ=%ld vtot=%ld vhit=%ld sprites=%ld sprite_px=%ld dots=%ld lines=%ld line_px=%ld wpx=%ld w3d=%ld tpx=%ld tramp=%ld\n", id, enh_cv.n, hs.passes, hs.checked, hs.hr, hs.stamped,
+            hs.agree, hs.differ, hs.empty, hs.inner, hs.inner_differ, fs.px, fs.differ, fs.inner, fs.inner_differ, fs.vtot, fs.vhit, sp, spx, dots, lines, lpx, wpx, w3d, fs.tpx, fs.tramp);
     fclose(f);
 }

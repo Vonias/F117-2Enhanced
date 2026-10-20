@@ -322,6 +322,12 @@ void hr_make_edge(u16 rec, u16 v0x8, u16 v1x8)
     e->flags |= 0x4040;
 }
 
+void hr_edge_point(u16 rec, s32 *x, s32 *y)
+{
+    const HrEdge *e = edge_of(rec);
+    if (e) { *x = e->x0; *y = e->y0; }
+}
+
 /* ---------------------------------------------------------------- 12EF assembler */
 
 static void note(s32 *lo, s32 *hi, s32 a, s32 b)

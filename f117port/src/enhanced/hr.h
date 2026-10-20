@@ -41,6 +41,11 @@ extern HrPoint enh_hr_pt;
 /* ---- hooks in the faithful render3d (each behind enh_shadow_on / enh_hr.on) */
 void enh_r3d_viewport(u16 vp);                     /* end of r3d_set_viewport (DB71): opens a pass, route 3D */
 void enh_r3d_end(void);                            /* end of r3d_end_scene (DB3E): closes it, route art */
+void enh_pass_continue(void);                      /* S3.2: the next pass continues the previous one (same window and page): its layers are kept */
+void enh_tv_backdrop(u16 ctx);                    /* S3.2: the TV window's 1x backdrop follows: route 3D, the pass that comes keeps it */
+void enh_tint_note(int x, int y, int w, int h);    /* S3.2: the FLIR tint recoloured this frame rectangle (--hr-dump trace type 10) */
+void hr_edge_point(u16 rec, s32 *x, s32 *y);       /* S3.2: the clipped first end of the hr edge record `rec` (layer px) */
+void enh_tv_sprite_pending(u16 rec, int size);     /* S3.2: r3d_draw_queued, before the TV sprite of the object whose last edge is `rec` */
 void hr_project(u16 di, u16 bx);                   /* r3d_project (11EB:0906): the hr vertex of the same slot */
 void hr_make_edge(u16 rec, u16 v0x8, u16 v1x8);    /* r3d_make_edge (11EB:0B3F): the hr edge record, clipped */
 void hr_poly_add_edge(u16 rec);                    /* r3d_poly_add_edge (12EF:003E) */
@@ -101,9 +106,10 @@ static inline s64 hr_keepwrap(s64 exact1, s64 hr, int n) { return exact1 == (s16
 static inline bool hr_fits16(s64 v, int n) { return v >= -32768LL * n && v <= 32767LL * n; }
 
 /* ---- --hr-dump (S2.3): the primitives the hr back end rasterised, as int32 words, for the independent reference (port/notes/e23/r3d_ref.py).
- * 0 B xmin ymin xmax ymax (a pass opens; layer px)   1 E x0 y0 x1 y1 (a clipped edge entering the DDA)   2 W a b x (a wall)
+ * 0 B xmin ymin xmax ymax keep (a pass opens; layer px; keep = 1: it continues the previous pass, S3.2)   1 E x0 y0 x1 y1 (a clipped edge entering the DDA)   2 W a b x (a wall)
  * 3 F colour (the polygon of the E / W since the last F is filled)   4 L x0 y0 x1 y1 colour w o (a line, brush w at offset o)
- * 5 Q ox oy colour n x y ... (a 1001 polygon, points relative to the window origin)   6 H (hz_draw fills a half plane: not modelled) */
+ * 5 Q ox oy colour n x y ... (a 1001 polygon, points relative to the window origin)   6 H (hz_draw fills a half plane: not modelled)
+ * 10 T x0 y0 x1 y1 (S3.2: the FLIR tint recoloured this layer rectangle through the green ramp 98h-9Fh) */
 extern bool hr_tracing;
 void hr_trace(int type, int nargs, const s32 *a);
 void hr_trace_poly(s32 ox, s32 oy, u8 colour, int n, const s64 *pts);

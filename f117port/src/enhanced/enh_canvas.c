@@ -6,6 +6,7 @@
 
 #include "enhanced/enhanced.h"
 #include "enhanced/hr.h"
+#include "enhanced/sandbox.h"
 #include "platform/vga.h"
 #include "video/video.h"
 
@@ -167,6 +168,23 @@ void enh_rec_fill(u16 seg, u16 off, u8 val)
     Shadow *r = &sh_work[off];
     if (enh_route == ENH_ROUTE_3D) { r->src = SRC_3D; r->val = val; stamp3d(seg, off, val); }
     else r->src = SRC_NONE;                                          /* plain art over what was there */
+}
+
+/* S3.2: the 1x page pixel at off was recoloured in place, new = f(old) (the FLIR ramp 98h-9Fh of the TV window, poly_fill mode 3). A 3D record that still holds
+ * `old` follows: the colours of its N x N layer block go through the same f (written and stamped pixels alike) and the record takes the new value, so the tinted
+ * window stays at N x. Anything else is plain art over what was there (false: the caller records it as art). */
+bool enh_rec_remap(u16 seg, u16 off, u8 old, u8 val, u8 (*f)(u8))
+{
+    if (!rec_ok(seg, off)) return false;
+    Shadow *r = &sh_work[off];
+    if (r->src != SRC_3D || r->val != old || !l3d_work || (enh_hr.on && seg != enh_hr.seg)) return false;
+    const int n = enh_cv.n;
+    u16 *p = l3d_work + (size_t)(enh_cv.fy + (off / 320) * n) * enh_cv.lw + (size_t)(enh_cv.fx + (off % 320) * n);
+    for (int ky = 0; ky < n; ky++, p += enh_cv.lw)
+        for (int kx = 0; kx < n; kx++)
+            if (p[kx] & 0x100) p[kx] = (u16)((p[kx] & 0xFF00) | f((u8)p[kx]));
+    r->val = val;
+    return true;
 }
 
 void enh_rec_3d(u16 seg, u16 off, u8 val)
@@ -350,6 +368,45 @@ void enh_vec_put(int lx, int ly, u8 c)
         }
     }
     lvec_work[(size_t)ly * enh_cv.lw + lx] = (u16)(0x100 | c);
+}
+
+/* ---------------------------------------------------------------- window store (S3.2) */
+
+/* The map MFD keeps its finished window in the backup page 2 (mfd_map_save_bg, 973C) and copies it back every frame to erase the aircraft marker (mfd_map_restore_bg,
+ * 9770) instead of drawing the terrain again. A blit between pages is a plain page write, so without help the restored pixels would lose their records and show as 1x
+ * pixels. The store keeps the work records and the three layers of the window beside the backup page (one slot, the map window). Not touched in a display pass. */
+static struct { bool valid; int x, y, w, h, n; Shadow *rec; u16 *l3, *lv; } store;
+
+void enh_window_save(int x, int y, int w, int h)
+{
+    if (enh_sbx || !l3d_work || x < 0 || y < 0 || w <= 0 || h <= 0 || x + w > 320 || y + h > 200) return;
+    const int n = enh_cv.n;
+    free(store.rec); free(store.l3); free(store.lv);
+    store.valid = false;
+    store.rec = malloc((size_t)w * h * sizeof(Shadow));
+    store.l3 = malloc((size_t)w * h * n * n * sizeof(u16));
+    store.lv = malloc((size_t)w * h * n * n * sizeof(u16));
+    if (!store.rec || !store.l3 || !store.lv) { free(store.rec); free(store.l3); free(store.lv); store.rec = NULL; store.l3 = store.lv = NULL; return; }
+    for (int j = 0; j < h; j++) memcpy(store.rec + (size_t)j * w, sh_work + (y + j) * 320 + x, (size_t)w * sizeof(Shadow));
+    for (int j = 0; j < h * n; j++) {
+        const size_t at = (size_t)(enh_cv.fy + y * n + j) * enh_cv.lw + (size_t)(enh_cv.fx + x * n);
+        memcpy(store.l3 + (size_t)j * w * n, l3d_work + at, (size_t)w * n * sizeof(u16));
+        memcpy(store.lv + (size_t)j * w * n, lvec_work + at, (size_t)w * n * sizeof(u16));
+    }
+    store.x = x; store.y = y; store.w = w; store.h = h; store.n = n;
+    store.valid = true;
+}
+
+void enh_window_restore(int x, int y, int w, int h)
+{
+    if (!store.valid || !l3d_work || store.x != x || store.y != y || store.w != w || store.h != h || store.n != enh_cv.n) return;
+    const int n = enh_cv.n;
+    for (int j = 0; j < h; j++) memcpy(sh_work + (y + j) * 320 + x, store.rec + (size_t)j * w, (size_t)w * sizeof(Shadow));
+    for (int j = 0; j < h * n; j++) {
+        const size_t at = (size_t)(enh_cv.fy + y * n + j) * enh_cv.lw + (size_t)(enh_cv.fx + x * n);
+        memcpy(l3d_work + at, store.l3 + (size_t)j * w * n, (size_t)w * n * sizeof(u16));
+        memcpy(lvec_work + at, store.lv + (size_t)j * w * n, (size_t)w * n * sizeof(u16));
+    }
 }
 
 /* ---------------------------------------------------------------- display-pass snapshots (S2.4, sandbox.c) */

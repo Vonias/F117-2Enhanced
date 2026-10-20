@@ -37,7 +37,7 @@ class Hrd:
     def events(self):
         """yield (type, args list) over the trace"""
         t, i, n = self.trace, 0, len(self.trace)
-        sizes = {0: 4, 1: 4, 2: 3, 3: 1, 4: 7, 6: 0, 8: 4, 9: 11}      # 7 (a sprite: x0 y0 dw dh sw sh + sw sh source words), 5 (a polygon) are variable
+        sizes = {0: 5, 1: 4, 2: 3, 3: 1, 4: 7, 6: 0, 8: 4, 9: 11, 10: 4}      # 7 (a sprite: x0 y0 dw dh sw sh + sw sh source words), 5 (a polygon) are variable
         while i < n:
             ty = int(t[i])
             if ty == 5:

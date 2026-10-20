@@ -46,7 +46,7 @@ class Ref:
         self.polys = 0
         self.lines = 0
         self.fills = 0
-        self.sprites = self.dots = self.vlines = 0
+        self.sprites = self.dots = self.vlines = self.tints = 0
         self.vval = None                                       # the vector layer's expected values (S3.1), allocated on the first vector line
 
     def stamp_block(self, x0, y0, w, hh, colours):
@@ -150,10 +150,16 @@ class Ref:
             if ty != 4:
                 hz = False
             if ty == 0:
-                self.win = tuple(int(v) for v in a)
+                self.win = tuple(int(v) for v in a[:4])
                 x0, y0, x1, y1 = self.win
-                self.val[y0:y1 + 1, x0:x1 + 1] = -1
+                if not int(a[4]):                              # S3.2: a pass that continues the previous one (the TV close view) keeps its pixels
+                    self.val[y0:y1 + 1, x0:x1 + 1] = -1
                 edges = []
+            elif ty == 10:                                     # S3.2: the FLIR tint recoloured the window through the green ramp 98h-9Fh
+                x0, y0, x1, y1 = [int(v) for v in a]
+                blk = self.val[y0:y1 + 1, x0:x1 + 1]
+                self.val[y0:y1 + 1, x0:x1 + 1] = np.where(blk >= 0, ((blk & 0x0E) >> 1) | 0x98, blk)
+                self.tints += 1
             elif ty == 1:
                 edges.append((0, tuple(int(v) for v in a)))
             elif ty == 2:
@@ -264,7 +270,7 @@ def check(h):
     r = Ref(h)
     r.run()
     out = dict(judged=0, gap=0, wrong=0, stray=0, stamped=0, polys=r.polys, fills=r.fills, lines=r.lines, dith=0, sprites=r.sprites, dots=r.dots, vlines=r.vlines,
-               vjudged=0, vgap=0, vwrong=0, vstray=0)
+               vjudged=0, vgap=0, vwrong=0, vstray=0, tints=r.tints)
     if r.vval is not None and h.vec is not None:           # the vector layer: the clipped lines of the tracers / target boxes
         vw = (h.vec & 0x100) != 0
         vv = (h.vec & 0xFF).astype(np.int16)
@@ -336,7 +342,8 @@ def main():
             bad += 1
             continue
         files = sorted(f for f in os.listdir(work) if f.endswith('.hrd'))
-        tot = dict(judged=0, gap=0, wrong=0, stray=0, stamped=0, polys=0, fills=0, lines=0, dith=0, sprites=0, dots=0, vlines=0, vjudged=0, vgap=0, vwrong=0, vstray=0)
+        tot = dict(judged=0, gap=0, wrong=0, stray=0, stamped=0, polys=0, fills=0, lines=0, dith=0, sprites=0, dots=0, vlines=0, vjudged=0, vgap=0, vwrong=0, vstray=0, tints=0)
+        s32 = dict(judged=0, gap=0, wrong=0, stray=0, sprites=0, tints=0, n=0)       # S3.2: the TV camera (tv*) and map MFD (map*) scenes on their own
         worst = []
         for f in files:
             h = Hrd(os.path.join(work, f))
@@ -344,6 +351,10 @@ def main():
             c['dith'] = dithers(h)
             for k in tot:
                 tot[k] += c[k]
+            if f.startswith(('tv', 'map')):
+                s32['n'] += 1
+                for k in ('judged', 'gap', 'wrong', 'stray', 'sprites', 'tints'):
+                    s32[k] += c[k]
             j = max(1, c['judged'])
             frac = {k: c[k] / j for k in ('gap', 'wrong', 'stray')}
             worst.append((max(frac.values()), f[:-4], c))
@@ -359,6 +370,14 @@ def main():
             print('  worst: %s gap %d wrong %d stray %d of %d judged' % (name, c['gap'], c['wrong'], c['stray'], c['judged']))
         print('  S3.1 objects: %d sprites, %d dots (judged with the polygons); %d vector lines: %d layer px judged, gap %d, wrong %d, stray %d'
               % (tot['sprites'], tot['dots'], tot['vlines'], tot['vjudged'], tot['vgap'], tot['vwrong'], tot['vstray']))
+        print('  S3.2 TV camera and map MFD scenes: %d scenes, %d layer px judged, gap %d, wrong %d, stray %d; %d sprites, %d FLIR tints (judged through the ramp)'
+              % (s32['n'], s32['judged'], s32['gap'], s32['wrong'], s32['stray'], s32['sprites'], s32['tints']))
+        if s32['n'] < 30 or s32['judged'] < 90000 * n * n or s32['sprites'] < 60 or s32['tints'] < 6:
+            print('  the TV / map scenes did not exercise two-pass windows, sprites, the FLIR tint or the map zooms')
+            bad += 1
+        if s32['gap'] + s32['stray'] or s32['wrong'] > s32['judged'] // 20000:
+            print('  the TV / map windows differ from the reference rasteriser')
+            bad += 1
         if tot['sprites'] < 50 or tot['dots'] < 8 or tot['vlines'] < 50 or tot['vjudged'] < 500:
             print('  the object scenes did not exercise sprites / dots / vector lines')
             bad += 1

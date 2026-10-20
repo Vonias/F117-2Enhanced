@@ -54,10 +54,13 @@ void enh_page_cleared(u16 seg);                         /* a whole page was over
 /* S2.2: a pixel of the faithful 3D raster (1359 spans / lines) that the hr back end mirrors: shadow only (without an open hr pass it is
  * recorded like enh_rec_fill, its block stamped with the 1x value). Call AFTER the write. */
 void enh_rec_3d(u16 seg, u16 off, u8 val);
+bool enh_rec_remap(u16 seg, u16 off, u8 old, u8 val, u8 (*f)(u8));   /* S3.2: an in-place recolour (FLIR ramp) of a 3D pixel: its layer block follows; false = record it as art */
 void enh_rec_span3d(u16 seg, u16 off, int len);         /* the same for len page bytes from off */
 bool enh_shadow_vechr(u16 off, u8 *val);                /* S3.1: the work record of off is an hr vector emitter's footprint (its value in *val) */
 bool enh_shadow_3d(u16 off, u8 *val);                   /* the work record of off is a 3D write (its value in *val) */
 void enh_pass_clear(int x0, int y0, int x1, int y1);    /* a 3D pass opens: shadow, 3D and vector layer cleared inside its window (frame px) */
+void enh_window_save(int x, int y, int w, int h);       /* S3.2: the map MFD's backup page 2 gets the window's records and layers (one slot) */
+void enh_window_restore(int x, int y, int w, int h);    /* S3.2: ... and gives them back where the window is copied back from the backup */
 void enh_layers_reset(void);                            /* every record and layer cleared (the render test, per scenario) */
 #define ENH_REC_3D(seg, off, val) do { if (enh_shadow_on) enh_rec_3d((seg), (u16)(off), (u8)(val)); } while (0)
 #define ENH_REC_SPAN3D(seg, off, len) do { if (enh_shadow_on) enh_rec_span3d((seg), (u16)(off), (len)); } while (0)

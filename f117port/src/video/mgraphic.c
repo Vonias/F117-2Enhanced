@@ -512,6 +512,7 @@ void line(int x1_, int y1_, int x2_, int y2_)
 void pixel_last(void) { put_pixel(last_x, last_y); }
 
 /* ------------------------------------------------------------------ span fills (slots 37, 40): spec section 5 */
+static u8 ramp_98(u8 c) { return (u8)(((c & 0x0E) >> 1) | 0x98); }   /* the green MFD ramp (mode 3 of slot 37) */
 /* slot 37, 019C:0F3D; slot 40 = mode 0 (0F3B) */
 void poly_fill(int ymin, void *tbl, int ymax, int mode)
 {
@@ -526,12 +527,14 @@ void poly_fill(int ymin, void *tbl, int ymax, int mode)
         u16 n = (u16)(R - L + 1);
         u16 di = (u16)(rowoff((u16)y) + draw_off + L);
         for (u16 i = 0; i < n; i++, di++) {
+            const u8 was = pg[di];   /* ENH: S3.2 */
             switch (mode) {
             case 0: pg[di] = colour; break;
             case 1: pg[di] |= colour; break;
             case 2: pg[di] &= colour; break;
-            default: pg[di] = (u8)(((pg[di] & 0x0E) >> 1) | 0x98); break;   /* the green MFD ramp 98h-9Fh */
+            default: pg[di] = ramp_98(pg[di]); break;   /* the green MFD ramp 98h-9Fh */
             }
+            if (enh_shadow_on && mode > 2 && enh_rec_remap(draw_seg, di, was, pg[di], ramp_98)) continue;   /* ENH: S3.2, the layer block follows the recolour */
             ENH_REC_FILL(draw_seg, di, pg[di]);   /* ENH: shadow record */
         }
         y--;

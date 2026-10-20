@@ -97,6 +97,28 @@ def scenarios(T, st):
     # (j) the TV camera (bf71) on sites and units
     for n, i in enumerate(sites[:6]):
         T.add('tv%d' % n, 's1', base + ['call mfd_view_render %d %d %d 0 0 0 0 %d 0' % (i[2], i[0], i[1], (1, 3, 4)[n % 3])])
+    # (j2) S3.2: the TV camera's other paths. [034A] != 0 takes the terrain path; mode 1 with zshift != 0 is the close view of an air target (two passes in
+    # the window: the terrain, then the object, with fire puffs when the unit record has bit 20h); zshift 0 draws the smoke column of the site instead.
+    # The FLIR tint ([43B2], C6DE) recolours the finished window through the green ramp 98h-9Fh. The flight palette is the mission's real one.
+    tv = base + ['call pal_flight_load', 'poke b 0x4088 1', 'poke w 0x034A 1']      # [4088] = 1: the TV pass page is page 1, the page MGRAPHIC draws on (the tint and bands use it)
+    for n, i in enumerate(sites[:3]):
+        call = 'call mfd_view_render %d %d %d 0 0 0 0 1 %%d' % (i[2], i[0], i[1])
+        puffs = ['pokes 0x%X %s' % (0x39DA + 8 * j, struct.pack('<HHhH', w(i[0] + (j % 4) - 2), w(i[1] + 2 * (j // 4) - 3), 8 * (j % 5), j & 7).hex()) for j in range(16)]
+        # the six fire puffs of C73C (state at 3A5C: dx, dy, frame, live): already live, so that this call draws them (a dead one is only re-seeded)
+        fire = ['poke w 0x3D64 0', 'poke b 0xC156 0x22'] + ['pokes 0x%X %s' % (0x3A5C + 8 * k, struct.pack('<hhHH', (k - 3) * 0x180, (k % 3 - 1) * 0x180, 1 + k % 3, 1).hex()) for k in range(6)]
+        T.add('tvclose%d' % n, 's1', tv + [call % 1])
+        T.add('tvfire%d' % n, 's1', tv + fire + [call % 2])
+        T.add('tvflir%d' % n, 's1', tv + ['poke w 0x43B2 1'] + fire + [call % 1])
+        T.add('tvsmoke%d' % n, 's1', tv + puffs + ['poke w 0x3D68 0', call % 0])
+        T.add('tvsimple_flir%d' % n, 's1', base + ['call pal_flight_load', 'poke b 0x4088 1', 'poke w 0x034A 0', 'poke w 0x43B2 1', 'call mfd_view_render %d %d %d 0 0 0 0 1 0' % (i[2], i[0], i[1])])
+    # the map MFD terrain with the flight palette at three zooms, and the whole redraw (terrain, then the map symbols as 2D art) as the game calls it
+    for z in (3, 6, 9):
+        T.add('mapfp%d' % z, 's1', base + ['call pal_flight_load', 'call map_render_terrain 0x4014 %d %d %d' % (w(st['C0A4'] // 2), w(0x4000 - st['C0B2'] // 2), 9 - z)])
+    # the map window as the game keeps it: the finished terrain is saved to the backup page 2 (973C), a route line / marker is drawn over it, and the window is copied
+    # back every frame to erase the marker (9770); the terrain must still be the same picture afterwards (S3.2: the records and layers go with the backup)
+    for z in (3, 6, 9):
+        T.add('mapbg%d' % z, 's1', base + ['call pal_flight_load', 'poke b 0x4088 1', 'call map_render_terrain 0x4014 %d %d %d' % (w(st['C0A4'] // 2), w(0x4000 - st['C0B2'] // 2), 9 - z),
+              'call mfd_map_save_bg', 'call gfx_set_fg 15', 'call mfd_map_line %d %d %d %d' % (w(st['C0A4'] - 3000), w(st['C0B2'] - 1000), w(st['C0A4'] + 3000), w(st['C0B2'] + 1000)), 'call mfd_map_restore_bg'])
     # (k) the scenery collision probe (0FFB through 77D9)
     for n, i in enumerate(sites[:6]):
         for k, (dx, dy) in enumerate(((0, 0), (8, 3), (-5, 12))):
