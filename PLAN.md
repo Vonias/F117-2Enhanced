@@ -25,8 +25,8 @@ remove it when it is done.
 
 ## Status
 
-- **Done:** S0.1 (repo from the faithful port), S1.1 (`DESIGN.md`, the render and timing design), S2.1 (canvas, compositor, shadow plane; U1 OK 2026-10-19), S2.2 (render3d at N×; U1 OK 2026-10-20), S2.3 (tests, reference rasteriser, dumps; U1 pending).
-- **Next:** S2.4 (Opus): sandboxed display pass (snapshot/restore, `enh_frame_begin`/`enh_idle` hooks, the sandbox hash ctest; `DESIGN.md` 4.2). Your tasks: **User to-do** above.
+- **Done:** S0.1 (repo from the faithful port), S1.1 (`DESIGN.md`, the render and timing design), S2.1 (canvas, compositor, shadow plane; U1 OK 2026-10-19), S2.2 (render3d at N×; U1 OK 2026-10-20), S2.3 (tests, reference rasteriser, dumps; U1 OK 2026-10-20), S2.4 (sandboxed display pass, hash ctest).
+- **Next:** S3.1 (Sonnet): the main 3D view at N× in all view modes (routing 3D vs HUD, sprites, dots, tracers; `DESIGN.md` 2.5, 2.6). Your tasks: **User to-do** above.
 - Escalation rule: a subtask that fails twice on Sonnet → new Opus session with a 5-line note
   (symptom, file, what was tried). Never carry an old transcript over.
 
@@ -75,7 +75,7 @@ picture scaled up to fill; full-screen 3D, outside and map: extended), per Decis
 | S2.1 | Host: canvas separate from 320x200 (any aspect, `--render-scale N`, `--wide`), the compositor (3D layer + vector layer + shadow plane, live DAC/CRTC) and the shadow records in `mgraphic.c`; `--classic` = today's present path (DESIGN 2.1, 2.5, 3.1) | S | M  done 2026-10-19 · U1 OK 2026-10-19 |
 | S2.2 | render3d at N×: the hr back end (`hr_clip/hr_raster/hr_edge2d` copies) fed by hooks in projection, edges, clipper, spans, sky and 1001; rule R1; N=1 byte-identical (DESIGN 2.2–2.4) | O | L | done 2026-10-19 · U1 OK 2026-10-20 |
 | S2.3 | Tests: the faithful suite in `--classic`; golden scenes at N=1 through the hr path; reference-rasteriser comparison at N=2/4; headless PNG and mask dumps for the user (DESIGN 5.3) | S | M | done 2026-10-20 · U1 OK 2026-10-20 |
-| S2.4 | Sandboxed display pass: snapshot/restore of mem, VGA model, driver statics and layers; sound/wait suppression; `enh_frame_begin`/`enh_idle` hooks; the sandbox hash ctest (DESIGN 4.2) | O | M | |
+| S2.4 | Sandboxed display pass: snapshot/restore of mem, VGA model, driver statics and layers; sound/wait suppression; `enh_frame_begin`/`enh_idle` hooks; the sandbox hash ctest (DESIGN 4.2) | O | M | done 2026-10-20 |
 
 Notes:
 - S2.1 status: `src/enhanced/enh_canvas.[ch]` (geometry, layers, shadow plane, compositor, mouse mapping), `enh_canvas_test.c` (`--compose-test`, ctest
@@ -99,6 +99,16 @@ Notes:
 - S2.3 status: tests and tools in `port/notes/e23/`. The port option `--hr-dump DIR` (implies `--hr-check`; `F117_ENH_ARGS`) makes each `--render-test` scenario write `DIR/<id>.hrd`: the primitives the hr back end rasterised (clipped edges, walls, fill colour words, lines with brush, 1001 polygons; `hr.h`), the 3D layer of the pass windows, the page, DAC and 3D-write mask. `r3d_ref.py` (ctest `r3d_hr_ref`, N=2 and 4, grid and fine, ~27 s, cached golden references, skips without `Game/`) fills the same primitives with an exact float rule (an edge is the line of pixels within half a pixel of each row; strict = certainly covered, wide = possibly) and judges only pixels whose last painter covers them strictly: gap (not written), wrong (other colour), stray (written outside every wide coverage). Measured 2026-10-20 over 128 scenes: 9.5 k polygons, 9.6 k lines, 146 dithered fills, 8.7 M (N=2) / 35.9 M (N=4) judged layer pixels: gap 0, stray 0, wrong 0.0012 % (sky-band edges of 1001, which does not follow the Bresenham rule: worst scenario `high2` 0.14 %; the tests assert totals gap/stray <= 0.001 %, wrong <= 0.01 %, per scenario wrong <= 0.3 %, gap/stray <= 0.05 %, and >= 50 dithered fills). Stamped 1x pixels, AND/OR fills and the hz half plane are not judged. Dither: the shipped colour tables contain no two-colour (hi < FBh) or FCh word in any scene, so `r3d_golden.py` got 18 scenes (`dither_*`, `stipple_*`: targets, close ups, runway, low, a view_frame) that patch the active colour tables on both sides (`patched_table`: odd colour bytes get a second colour `lo ^ 8`, every third byte becomes a stipple); the port equals the original there too (golden now 128 scenes) and the hr layer agrees with the reference in both dither modes. `dump_scenes.py` (ctest `r3d_hr_dump` on two scenes) writes `work/e23/<scene>_classic|grid|fine|mask.png` and `contact_dither.png` / `contact_scenes.png` (U1). The faithful suite passes in `--classic` and the full ctest is 28/28 (`r3d_hr_ref`, `r3d_hr_dump` are new).
 - S2.3 note (2026-10-20): in `work/e23` the own F-117 in `ext0` is light green in classic and hr alike: the golden scenes poke the
   view mode and keep the start-up palette. In real play the jet is black (user). Later reference dumps should load the mission's flight palette.
+- S2.4 status: `src/enhanced/sandbox.[ch]` (choices in `DESIGN.md` 4.7). Snapshot set: `mem[]` whole, `cur_dgroup`, `dg_sp`, `timer_ticks`, the VGA model
+  (vram, DAC, registers, port state), the `mgraphic.c` / `pic.c` / `r3d_object.c` statics and the driver image, the hr back end's fixed statics, each listed by
+  an `ENH:` `*_sandbox_regions` function: 1 418 421 B; plus the canvas (shadow plane + four layers, 5 120 000 B at the headless 960 x 600), copied into a
+  scratch set and swapped in by pointer. Hooks: `enh_frame_begin` (frame_loop_body, A_k), `enh_idle` (frame_floor, first and in its wait), no-ops / refusals in
+  sandbox (`sim_snd_*`, `frame_delay`, `[262A]` wait, vga and host waits, `host_pump`, `host_opl_write`, DOS/stdio file calls), `enh_env_args` in `main`.
+  Options: `--sandbox-test N` (N invisible passes per frame with a test view: other heading/position), `--sandbox-hash FILE`; `F117_VCLOCK=1` (virtual host clock,
+  test aid). Measured: A_k 0.4-0.8 ms per frame, per pass 0.55-0.95 ms snapshot + 0.10-0.17 ms restore (+ ~1.9 ms render). ctest `enh_sandbox_hash` (~15 s):
+  the `debrief_chain_sea` chain plain / with 3 passes per frame / `--classic`: 212 VGAME frames, per-frame hashes (DGROUP, comm, LCG, sound driver, OPL
+  stream, `mem[]`, VGA, canvas) identical, final comm block and roster identical, 0 forbidden calls; no field excluded, no leak found (a deliberately broken
+  restore of `mem[]` or of the canvas fails it). Full ctest 29/29. Nothing is shown, so no U1.
 
 ### Phase 3 — Visible features (resolution)
 | Id | Task | Model | Size | Status |

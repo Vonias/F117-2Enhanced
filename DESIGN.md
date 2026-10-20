@@ -261,6 +261,43 @@ inputs) run only from `host_pump` in real time, never in a display pass: sound t
 * No display pass leaves any byte changed in `mem[]`, VGA model or engine statics; the hr back end never writes them.
 * Input bytes reach the keyboard model in the same order; the RNG `926E` is touched only by canonical code.
 
+### 4.7 As built (S2.4): choices where 4.2 was silent
+* **Snapshot set** (`enhanced/sandbox.c`, a region table rebuilt at every frame start): `mem[]` whole (1 114 112 B: every DGROUP,
+  the comm block, the pages in the DOS arena, the BIOS data area), `cur_dgroup`, `dg_sp` (the emulated stack of the render's
+  locals), `timer_ticks`; the VGA model (vram 256 KB, DAC, CRTC/sequencer/GC/attribute registers and indices, the DAC port state,
+  the `dirty` flag; the composition cache is output and not in it); `mgraphic.c` (page table, draw seg/off, flip state, shake,
+  colour, last x/y, `rng`, the sprite-pool and encoder words, and the driver image itself, whose data segment is the original's);
+  `pic.c` (decoder state, `rle_out`); `r3d_object.c bsp_out`, `r3d_bisect_last_bp`; the hr back end's fixed statics (`enh_hr`,
+  `enh_hr_pt`, the clipper's vertices/edges/assembler state, the 1001 dirty rows, `hr_miny`). The hr row tables are scratch rebuilt
+  from the faithful R3dWork tables when a pass opens and are not in it. Each module lists its own statics in an `ENH:`
+  `*_sandbox_regions(add)` function (vga.c, mgraphic.c, pic.c, r3d_object.c, hr_pass.c); `sandbox.c` copies the regions into one
+  buffer with one memcpy each. Image 1 418 421 B. No sound or flight static is in it: a pass never reaches them (below).
+* **Canvas** (`enh_canvas.c`, `EnhCanvasSnap`): geometry, view, route, shadow plane (2 x 256 000 B) and the four layers (4 x lw x lh x 2 B;
+  5 120 000 B in all at the headless 960 x 600, N = 3). A_k takes a deep copy once per frame; a pass copies A_k's canvas into a
+  scratch set and **swaps** pointers with the live canvas, and swaps back afterwards (no copy back). The shadow planes became
+  pointers for this (`sh_buf`).
+* **Order**: `enh_frame_begin` (A_k) → canonical render → `frame_floor`: `enh_idle()` first, then once per wait iteration (S4.1
+  will run one pass per refresh there; S2.4's `--sandbox-test N` runs its N passes at the first call) → flip → step.
+  A pass: save live, canvas swap-in, load A_k, `enh_sbx = 1`, `view_frame`, `hud_overlay_frame`, (view 0) `hud_draw_far`,
+  `hud_side_strips`, `cockpit_draw_adi`, `flip`; `enh_sbx = 0`, load live, canvas swap-out. Nothing is presented in S2.4 (S4.1
+  composes the pass into the host frame), so a pass is invisible.
+* **Inside a pass** (`enh_sbx`): `sim_snd_cmd` returns 0, `sim_snd_noise` returns; `frame_delay`, the `[262A]` wait,
+  `vga_wait_vretrace_*` and `host_wait_until_ns` return at once. Refused and counted (`enh_sandbox_deny`, reported as violations):
+  `host_pump` (so no tick, ISR body, sound poll, event or present), `host_opl_write`, `sim_snd_poll`, and every DOS/stdio file
+  entry (`dos_open/creat/read/write`, `rtl_open/write`, `fopen_fn`, `unlink_fn`, `platform_load_file_paras`). Measured: 0 in the
+  test chain. The comm block is in `mem[]` and comes back with it.
+* **Test view**: `--sandbox-test N` renders pass v (1..N) of a frame with the heading + v x 0x400, own x/y + v x 96 / 64 world units
+  and 2D94 rebuilt from the angles (`sim_matrix_from_angles`, as 4.2 step 2), so its pictures, designators and tracer hits really
+  differ from the canonical frame's; a pass that rendered the same frame would hide leaks that the canonical frame overwrites.
+* **Cost** (measured 2026-10-20, headless chain, canvas 960 x 600): A_k 0.4–0.8 ms per frame; per pass 0.55–0.95 ms snapshot (live save
+  1.4 MB, canvas copy 5.1 MB, A_k load 1.4 MB) and 0.10–0.17 ms restore, plus the render (~1.9 ms). 60 passes a second cost
+  about 40–70 ms of copies per second; the canvas copy dominates and shrinks to the not-redrawn rects if needed (4.2 step 1).
+* **Determinism for the test**: `F117_VCLOCK=1` makes the host clock virtual (`host.c clk_ns`: +1 us per read, a pump without a
+  tick due jumps to the next tick, no sleep; a pass reads it without advancing it), so two runs of the whole chain are the same
+  machine run tick for tick (seeds from the BIOS clock included). `--sandbox-hash FILE` writes per VGAME frame (at
+  `enh_frame_begin`, i.e. the state the previous step left) FNV-1a hashes of DGROUP, the comm block, the LCG `926E`, the sound
+  driver's memory, the OPL write stream, all of `mem[]`, vram + DAC and the canvas, and a final line at exit. No field is excluded.
+
 ## 5 (d) Hooks, `--classic`, tests
 
 ### 5.1 `ENH:` hooks (each a guarded call of 1–3 lines; bodies live in `src/enhanced/`)
@@ -284,6 +321,12 @@ inputs) run only from `host_pump` in real time, never in a display pass: sound t
 | `frame_loop_body` | `sim/sim_main.c` | `enh_frame_begin()` before `view_frame` | S2.4 |
 | `frame_floor` wait loop, `frame_delay` | `sim/sim_main.c` | `enh_idle()` → display pass; return at once in sandbox | S2.4, S4.1 |
 | `sim_snd_cmd`, `sim_snd_noise` | `sim/sim_stubs.c` | no-op in sandbox | S2.4 |
+| `sim_snd_poll`, `host_pump`, `host_opl_write`, `dos_*`, `rtl_open/write`, `fopen_fn`, `unlink_fn`, `platform_load_file_paras` | `sim/sim_stubs.c`, `host.c`, `platform/dosio.c` | refused + counted in sandbox (`enh_sandbox_deny`) | S2.4 |
+| `host_wait_until_ns`, `vga_wait_vretrace_*` | `host.c`, `platform/vga.c` | return at once in sandbox | S2.4 |
+| `host_ns`, `host_pump`, scripted keys | `host.c` | `clk_ns` (F117_VCLOCK virtual clock, test aid) | S2.4 |
+| `host_opl_write` | `host.c` | `enh_opl_trace` (the OPL stream for `--sandbox-hash`) | S2.4 |
+| statics | `vga.c`, `mgraphic.c`, `pic.c`, `r3d_object.c` | `*_sandbox_regions(add)`: the module's statics for the snapshot | S2.4 |
+| `main` | `main.c` | `enh_env_args()` before anything runs | S2.4 |
 | `view_frame` case 0x84 | `sim/sim_view.c` | lerp the ring pose in sandbox | S4.2 |
 
 ### 5.2 `--classic`
@@ -298,7 +341,7 @@ no hook leaks into classic.
 |---|---|---|
 | `r3d_hr_n1` | every render3d golden scene through the hr back end at N=1, fx=fy=0: 3D layer == the 1× page inside the viewport, byte for byte | S2.2/S2.3 |
 | `r3d_hr_ref` | N=2, 4: capture the hr polygons (`r3d_trace`), fill them with an independent pixel-centre reference filler; differences only within 1 layer px of an edge, summary count per scene | S2.3 |
-| `enh_sandbox_hash` | 200 `sim_vgame` scenarios: hash of mem/VGA/statics before and after k display passes per step = equal | S2.4 |
+| `enh_sandbox_hash` | as built (4.7): the `debrief_chain_sea` chain on the virtual clock, plain / 3 test-view display passes per VGAME frame / `--classic`: per-frame hashes of DGROUP, comm, LCG, sound driver, OPL stream, `mem[]`, VGA, canvas identical (canvas not compared with classic), final comm block and roster identical, 0 forbidden calls | S2.4 |
 | `sim_interp_equal` | the same scenarios with N=4, wide, interp (3 display passes per step, alpha .25/.5/.75) vs `--classic`: DGROUP after every step and the comm block at the end identical | S4.1 |
 | headless dumps | `--headless --enh-dump DIR` + `F117_KEYS` scripts: front cockpit (h 91/107), rear, left, right, 0x44, chase, TV, map; N=2/4; 4:3, 16:9, 21:9; plus mask PNGs → U1 | S2.3, S3.x |
 
