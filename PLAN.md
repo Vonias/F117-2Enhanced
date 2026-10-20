@@ -106,7 +106,6 @@ Notes:
 | S3.4 | Wider view: per-view canvas geometry, widened culling, B85D range and terrain cells in display passes (needs S2.4); left/right/rear as a whole picture; `--classic` = 320x200 (DESIGN 3) | O | M | |
 | S3.5 | Smooth distance shading (option, launcher switch, default off): the colour bands that show distance (the sky/ground bands of 1442 and the depth shade of faces and terrain, render3d "depth shade") blended into a gradual gradient instead of steps; the hr layer keeps the band index plus the distance fraction, the compositor mixes the two neighbouring band colours from the live DAC (so fades and flashes still apply); off and `--classic` = the original bands | O | M | |
 | S3.6 | True night (option, launcher switch, default off): in night missions the sky and the ground are much darker and the lit distance is shorter (terrain and objects fade into the dark sooner); done in the compositor as a transform of the night palette's sky/ground/distance-shade colours by distance, using the band index and fraction of S3.5; the HUD, MFDs, cockpit art and lamps unchanged; rendering only (detection and the sim untouched); off and `--classic` = the original night | O | M | |
-| S3.7 | Enhanced weather (option, launcher switch, default off): (a) clouds: the original draws none, so new procedural cloud layers/banks in the hr layer, coloured from the live palette (sky/ground tones, True night aware), coverage set per mission from the theatre and time; (b) turbulence in and near clouds, added to the flight model's existing buffet term (`1e9e`, simflow.md Part 2 section 2.4) with its OWN random stream, so the original `rand_n` sequence and everything driven by it is unchanged; clouds do not affect radar detection; the first enhancement that changes the sim: off and `--classic` = the original, and the faithful tests keep passing in classic | O | L | |
 
 ### Phase 4 — Frame rate
 | Id | Task | Model | Size | Status |
@@ -118,7 +117,7 @@ Notes:
 ### Phase 5 — Settings and launcher
 | Id | Task | Model | Size | Status |
 |---|---|---|---|---|
-| S5.1 | Launcher from `../F117-2/f117port/launcher/` (the faithful one: folder, options, key bindings, Game speed) plus Render scale, Frame rate, Smooth distance shading (S3.5), True night (S3.6), Enhanced weather (S3.7) and Classic; built by default, `-DF117_LAUNCHER=OFF` to skip | S | M | |
+| S5.1 | Launcher from `../F117-2/f117port/launcher/` (the faithful one: folder, options, key bindings, Game speed) plus Render scale, Frame rate, Smooth distance shading (S3.5), True night (S3.6) and Classic; built by default, `-DF117_LAUNCHER=OFF` to skip | S | M | |
 | S5.2 | Settings: every Enhanced option on the command line and in the launcher; defaults from U3 | H | S | |
 
 ### Phase 6 — Release
@@ -164,9 +163,6 @@ Several bugs in one message; one session then fixes them in a batch.
 
 ## Decisions
 (Settled answers from U3 go here, dated.)
-- 2026-10-20, user request: an "Enhanced weather" launcher toggle (S3.7): more cloud coverage and turbulence around
-  clouds. The original has no clouds (new procedural content) and turbulence changes the flight model, so it is an
-  exception to the "original art / sim unchanged" goal: off by default, its own RNG stream, `--classic` never applies it.
 - 2026-10-20, user request: a "True night" launcher toggle (S3.6) that significantly darkens the night sky and ground
   and shortens the lit distance. Off by default; `--classic` never applies it; a look change only, not a sim change.
 - 2026-10-20, user request: a launcher switch that blends the distance colour bands into a gradual gradient
