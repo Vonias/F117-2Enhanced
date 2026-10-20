@@ -22,7 +22,7 @@ remove it when it is done.
 
 | Task | What to do | For | Time |
 |---|---|---|---|
-| U1 (S3.2) | Fly with `& "C:\Coding\F117-2Enhanced117portuild117-enhanced.exe" --game-dir "C:\Coding\F117-2\Game" --render-scale 4` (PowerShell). Open the right MFD's TV/sensor page and the left map at a few zooms. Both should be sharp, the FLIR green tint should still work, and the labels should stay the original pixels. Compare with `--classic`; the stills are in `work\e32\contact_tv_map.png` (classic left, hr right). | S3.2 | 10 min |
+| U1 (S3.2) | Fly with `& "C:\Coding\F117-2Enhanced\f117port\build\f117-enhanced.exe" --game-dir "C:\Coding\F117-2\Game" --render-scale 4` (PowerShell). Open the right MFD's TV/sensor page and the left map at a few zooms. Both should be sharp, the FLIR green tint should still work, and the labels should stay the original pixels. Compare with `--classic`; the stills are in `work\e32\contact_tv_map.png` (classic left, hr right). | S3.2 | 10 min |
 
 ## Status
 
