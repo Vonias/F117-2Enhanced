@@ -201,10 +201,19 @@ if(Python3_Interpreter_FOUND)
     set_tests_properties(r3d_hr_n1 r3d_hr_n234 PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 1800 DEPENDS render3d_golden PASS_REGULAR_EXPRESSION "r3d-hr OK")
 endif()
 
+# ENH: S2.4, the sandboxed display pass (port/notes/e24/sandbox_hash.py): the scripted chain of debrief_chain_sea on the virtual clock (F117_VCLOCK), once
+# plain, once with 3 display passes per VGAME frame (another view per pass), once in --classic; the per-frame hash of the sim state (DGROUP, comm block, LCG,
+# sound driver, OPL stream, mem[], VGA, canvas) must be identical every frame, and the final comm block and roster too, with no forbidden call in a pass.
+if(Python3_Interpreter_FOUND)
+    add_test(NAME enh_sandbox_hash COMMAND Python3::Interpreter ${CMAKE_CURRENT_SOURCE_DIR}/../port/notes/e24/sandbox_hash.py
+             $<TARGET_FILE:f117> ${CMAKE_CURRENT_SOURCE_DIR}/../Game ${CMAKE_CURRENT_BINARY_DIR}/enh_sandbox 3)
+    set_tests_properties(enh_sandbox_hash PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 900 PASS_REGULAR_EXPRESSION "enh_sandbox_hash OK")
+endif()
+
 # ENH: every faithful test runs with the enhancements off (F117_CLASSIC acts as --classic for the Python drivers' own command lines).
 get_property(F117_ALL_TESTS DIRECTORY PROPERTY TESTS)
 foreach(t ${F117_ALL_TESTS})
-    if(NOT t STREQUAL "compose" AND NOT t MATCHES "^r3d_hr_")
+    if(NOT t STREQUAL "compose" AND NOT t MATCHES "^r3d_hr_" AND NOT t MATCHES "^enh_")
         set_property(TEST ${t} APPEND PROPERTY ENVIRONMENT F117_CLASSIC=1)
     endif()
 endforeach()

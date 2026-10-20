@@ -68,4 +68,21 @@ void enh_flip(unsigned bytes);                          /* the page flip copied 
 u16 *enh_layer3d(void);
 u16 *enh_layer_vec(void);
 
+/* S2.4, the display pass (sandbox.c): the canvas state (geometry, view, route, shadow plane, the four layers) as a value. take = a deep
+ * copy of the live state; copy = a deep copy; swap = the live state and *s change places (pointers only, no copy). The buffers of a
+ * snapshot are its own and reused; a swap hands them to the live canvas and back. */
+typedef struct {
+    EnhCanvas cv;
+    bool active, shadow_on;
+    int view, route;
+    void *sh_work, *sh_shown;                 /* PAGE_PIXELS shadow records each */
+    u16 *l3d_work, *l3d_shown, *lvec_work, *lvec_shown;
+    size_t layer_px, cap;                     /* pixels in use, pixels the layer buffers hold */
+} EnhCanvasSnap;
+bool enh_canvas_snap_take(EnhCanvasSnap *d);
+bool enh_canvas_snap_copy(EnhCanvasSnap *d, const EnhCanvasSnap *s);
+void enh_canvas_snap_swap(EnhCanvasSnap *s);
+size_t enh_canvas_snap_bytes(const EnhCanvasSnap *s);
+void enh_canvas_snap_peek(EnhCanvasSnap *s);              /* the live state as a snapshot value (its buffers stay the live ones: read only) */
+
 int enh_compose_selftest(void);                         /* --compose-test */

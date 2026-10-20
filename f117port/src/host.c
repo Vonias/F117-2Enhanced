@@ -17,6 +17,7 @@
 #include "opl3.h"
 #include "enhanced/enh_canvas.h"   /* ENH: the canvas */
 #include "enhanced/enhanced.h"
+#include "enhanced/sandbox.h"     /* ENH: S2.4 */
 
 #define OPL_RATE 49716u                /* Nuked-OPL3 native rate; SDL resamples */
 
@@ -64,6 +65,18 @@ static void frame_reserve(int w, int h)          /* ENH */
 static Uint64 clock_start_ns;
 static Uint64 ticks_run;
 
+/* ENH: S2.4, F117_VCLOCK=1 (test aid, ctest enh_sandbox_hash): a virtual clock, so that two runs of the chain are the same machine
+ * run tick for tick. Every read advances it by 1 us, a host_pump that finds no tick due jumps to the next tick (so each pump
+ * delivers one), and nothing sleeps. A display pass reads it without advancing it (a pass takes no time). */
+static bool vclock;
+static Uint64 vclock_ns;
+static Uint64 clk_ns(void)
+{
+    if (!vclock) return SDL_GetTicksNS();
+    if (!enh_sbx) vclock_ns += 1000;
+    return vclock_ns;
+}
+
 /* Audio: one OPL3 chip in OPL2 mode. */
 static opl3_chip opl;
 static u8 opl_status;
@@ -103,7 +116,8 @@ bool host_init(const HostConfig *cfg)
     frame_reserve(HOST_FRAME_MAX_W, HOST_FRAME_MAX_H);
     nominal_w = 320 * (cfg->scale < 1 ? 3 : cfg->scale);
     nominal_h = (aspect43 ? 240 : 200) * (cfg->scale < 1 ? 3 : cfg->scale);
-    clock_start_ns = SDL_GetTicksNS();
+    { const char *v = SDL_getenv("F117_VCLOCK"); vclock = v && *v && *v != '0'; }   /* ENH: S2.4 */
+    clock_start_ns = clk_ns();
     ticks_run = 0;
     OPL3_Reset(&opl, OPL_RATE);                          /* the chip model exists in every mode: the sound driver writes to it, headless runs just never render it */
     if (cfg->headless) return SDL_Init(0);              /* the clock and the files only: no window, no audio */
@@ -134,7 +148,7 @@ bool host_init(const HostConfig *cfg)
         fprintf(stderr, "audio unavailable: %s\n", SDL_GetError());
     }
 
-    clock_start_ns = SDL_GetTicksNS();
+    clock_start_ns = clk_ns();                           /* ENH: S2.4 (F117_VCLOCK) */
     return true;
 }
 
@@ -198,7 +212,7 @@ void host_set_frame_source(bool (*compose)(u32 *), int w, int h)
     host_resize_frame(frame_w, frame_h);
 }
 
-uint64_t host_ns(void) { return SDL_GetTicksNS() - clock_start_ns; }
+uint64_t host_ns(void) { return clk_ns() - clock_start_ns; }   /* ENH: S2.4 (F117_VCLOCK) */
 
 static Uint64 tick_due_ns(Uint64 n)
 {
@@ -297,7 +311,7 @@ static void scripted_keys(void)
     char *end;
     double at = SDL_strtod(spec, &end);
     if (end == spec || *end != ':') { spec = NULL; return; }
-    if ((double)(SDL_GetTicksNS() - clock_start_ns) / 1e9 < at) return;
+    if ((double)(clk_ns() - clock_start_ns) / 1e9 < at) return;   /* ENH: S2.4 (F117_VCLOCK) */
     const char *p = end + 1;
     u16 keys[8];
     int n = 0;
@@ -328,6 +342,7 @@ static void scripted_keys(void)
 
 void host_pump(void)
 {
+    if (enh_sandbox_deny("host_pump")) return;      /* ENH: S2.4, no tick, event or present in a display pass */
     process_events();
     scripted_keys();
     if (mouse_changed && mouse_handler) {
@@ -339,7 +354,8 @@ void host_pump(void)
     }
 
     bool worked = false;
-    Uint64 now = SDL_GetTicksNS();
+    Uint64 now = clk_ns();                          /* ENH: S2.4 (F117_VCLOCK) */
+    if (vclock && tick_due_ns(ticks_run + 1) > now) now = vclock_ns = tick_due_ns(ticks_run + 1);
     int budget = 35;                                /* at most 0.5 s of catch-up per call */
     while (tick_due_ns(ticks_run + 1) <= now && budget-- > 0) {
         ticks_run++;
@@ -357,11 +373,11 @@ void host_pump(void)
         if (changed || repaint) {
             repaint = false;
             present();
-            last_present_ns = SDL_GetTicksNS();
+            last_present_ns = clk_ns();             /* ENH: S2.4 (F117_VCLOCK) */
             worked = true;
         }
     }
-    if (!worked) {
+    if (!worked && !vclock) {                       /* ENH: S2.4, the virtual clock never sleeps */
         Uint64 next = tick_due_ns(ticks_run + 1);
         now = SDL_GetTicksNS();
         if (next > now) SDL_DelayNS(SDL_min(next - now, SDL_NS_PER_MS));
@@ -370,6 +386,7 @@ void host_pump(void)
 
 void host_wait_until_ns(uint64_t t)
 {
+    if (enh_sbx) return;                            /* ENH: S2.4, no wait in a display pass */
     while (host_ns() < t) host_pump();
 }
 
@@ -598,6 +615,8 @@ void host_audio_unlock(void) { if (audio_mutex) SDL_UnlockMutex(audio_mutex); }
 
 void host_opl_write(u8 reg, u8 value)
 {
+    if (enh_sandbox_deny("opl_write")) return;      /* ENH: S2.4, silent in a display pass; the stream for --sandbox-hash */
+    if (enh.sandbox_hash[0]) enh_opl_trace(reg, value);
     host_audio_lock();
     if (reg == 0x04) {                               /* timer control: model the status flags only */
         if (value & 0x80) opl_status = 0;

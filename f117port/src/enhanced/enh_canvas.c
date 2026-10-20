@@ -28,9 +28,10 @@ int enh_route;
 static bool active;
 static EnhView view = ENH_VIEW_MENU;
 
-static Shadow sh_work[PAGE_PIXELS], sh_shown[PAGE_PIXELS];
+static Shadow sh_buf[2][PAGE_PIXELS];
+static Shadow *sh_work = sh_buf[0], *sh_shown = sh_buf[1];  /* pointers, so a display pass can swap them (S2.4, enh_canvas_snap_swap) */
 static u16 *l3d_work, *l3d_shown, *lvec_work, *lvec_shown;   /* lw * lh each; bit 8 = written */
-static size_t layer_px;
+static size_t layer_px, layer_cap;                           /* layer_cap: the pixels the four buffers hold (>= layer_px) */
 
 /* ---------------------------------------------------------------- geometry (3.1, 3.2) */
 
@@ -87,7 +88,7 @@ static void layers_free(void)
 {
     free(l3d_work); free(l3d_shown); free(lvec_work); free(lvec_shown);
     l3d_work = l3d_shown = lvec_work = lvec_shown = NULL;
-    layer_px = 0;
+    layer_px = layer_cap = 0;
 }
 
 static void layers_alloc(void)
@@ -96,7 +97,7 @@ static void layers_alloc(void)
     layers_free();
     l3d_work = calloc(px, sizeof(u16)); l3d_shown = calloc(px, sizeof(u16));
     lvec_work = calloc(px, sizeof(u16)); lvec_shown = calloc(px, sizeof(u16));
-    if (l3d_work && l3d_shown && lvec_work && lvec_shown) layer_px = px;
+    if (l3d_work && l3d_shown && lvec_work && lvec_shown) layer_px = layer_cap = px;
     else layers_free();
 }
 
@@ -203,8 +204,8 @@ void enh_pass_clear(int x0, int y0, int x1, int y1)
 
 void enh_layers_reset(void)
 {
-    memset(sh_work, 0, sizeof sh_work);
-    memset(sh_shown, 0, sizeof sh_shown);
+    memset(sh_work, 0, PAGE_PIXELS * sizeof(Shadow));
+    memset(sh_shown, 0, PAGE_PIXELS * sizeof(Shadow));
     if (!layer_px) return;
     memset(l3d_work, 0, layer_px * sizeof(u16)); memset(l3d_shown, 0, layer_px * sizeof(u16));
     memset(lvec_work, 0, layer_px * sizeof(u16)); memset(lvec_shown, 0, layer_px * sizeof(u16));
@@ -213,8 +214,8 @@ void enh_layers_reset(void)
 void enh_page_cleared(u16 seg)
 {
     if (!enh_page_tracked(seg)) return;
-    memset(sh_work, 0, sizeof sh_work);
-    if (seg == 0xA000) memset(sh_shown, 0, sizeof sh_shown);
+    memset(sh_work, 0, PAGE_PIXELS * sizeof(Shadow));
+    if (seg == 0xA000) memset(sh_shown, 0, PAGE_PIXELS * sizeof(Shadow));
 }
 
 void enh_flip(unsigned bytes)
@@ -296,6 +297,71 @@ bool enh_compose_vga(u32 *xrgb)
     if (last) memcpy(last, xrgb, px * sizeof(u32));
     return true;
 }
+
+/* ---------------------------------------------------------------- display-pass snapshots (S2.4, sandbox.c) */
+
+static void snap_get_live(EnhCanvasSnap *s)
+{
+    s->cv = enh_cv; s->active = active; s->shadow_on = enh_shadow_on; s->view = (int)view; s->route = enh_route;
+    s->sh_work = sh_work; s->sh_shown = sh_shown;
+    s->l3d_work = l3d_work; s->l3d_shown = l3d_shown; s->lvec_work = lvec_work; s->lvec_shown = lvec_shown;
+    s->layer_px = layer_px; s->cap = layer_cap;
+}
+
+static void snap_set_live(const EnhCanvasSnap *s)
+{
+    enh_cv = s->cv; active = s->active; enh_shadow_on = s->shadow_on; view = (EnhView)s->view; enh_route = s->route;
+    sh_work = s->sh_work; sh_shown = s->sh_shown;
+    l3d_work = s->l3d_work; l3d_shown = s->l3d_shown; lvec_work = s->lvec_work; lvec_shown = s->lvec_shown;
+    layer_px = s->layer_px; layer_cap = s->cap;
+}
+
+bool enh_canvas_snap_copy(EnhCanvasSnap *d, const EnhCanvasSnap *s)
+{
+    if (!d->sh_work) d->sh_work = malloc(PAGE_PIXELS * sizeof(Shadow));
+    if (!d->sh_shown) d->sh_shown = malloc(PAGE_PIXELS * sizeof(Shadow));
+    if (!d->sh_work || !d->sh_shown) return false;
+    if (d->cap < s->layer_px) {
+        free(d->l3d_work); free(d->l3d_shown); free(d->lvec_work); free(d->lvec_shown);
+        d->l3d_work = malloc(s->layer_px * sizeof(u16)); d->l3d_shown = malloc(s->layer_px * sizeof(u16));
+        d->lvec_work = malloc(s->layer_px * sizeof(u16)); d->lvec_shown = malloc(s->layer_px * sizeof(u16));
+        d->cap = d->l3d_work && d->l3d_shown && d->lvec_work && d->lvec_shown ? s->layer_px : 0;
+        if (!d->cap) {
+            free(d->l3d_work); free(d->l3d_shown); free(d->lvec_work); free(d->lvec_shown);
+            d->l3d_work = d->l3d_shown = d->lvec_work = d->lvec_shown = NULL;
+            return false;
+        }
+    }
+    memcpy(d->sh_work, s->sh_work, PAGE_PIXELS * sizeof(Shadow));
+    memcpy(d->sh_shown, s->sh_shown, PAGE_PIXELS * sizeof(Shadow));
+    const size_t nb = s->layer_px * sizeof(u16);
+    if (nb) {
+        memcpy(d->l3d_work, s->l3d_work, nb); memcpy(d->l3d_shown, s->l3d_shown, nb);
+        memcpy(d->lvec_work, s->lvec_work, nb); memcpy(d->lvec_shown, s->lvec_shown, nb);
+    }
+    d->cv = s->cv; d->active = s->active; d->shadow_on = s->shadow_on; d->view = s->view; d->route = s->route;
+    d->layer_px = s->layer_px;
+    return true;
+}
+
+bool enh_canvas_snap_take(EnhCanvasSnap *d)
+{
+    EnhCanvasSnap live;
+    snap_get_live(&live);
+    return enh_canvas_snap_copy(d, &live);
+}
+
+void enh_canvas_snap_swap(EnhCanvasSnap *s)
+{
+    EnhCanvasSnap live;
+    snap_get_live(&live);
+    snap_set_live(s);
+    *s = live;
+}
+
+void enh_canvas_snap_peek(EnhCanvasSnap *s) { snap_get_live(s); }
+
+size_t enh_canvas_snap_bytes(const EnhCanvasSnap *s) { return 2 * PAGE_PIXELS * sizeof(Shadow) + 4 * s->layer_px * sizeof(u16); }
 
 /* ---------------------------------------------------------------- mouse */
 

@@ -17,11 +17,13 @@ static bool env_classic(void)
 }
 
 bool enh_canvas_on(void) { return !enh.classic && enh.canvas && !env_classic(); }
+bool enh_sandbox_on(void) { return !enh.classic && enh.sandbox_test > 0 && !env_classic(); }
 
 int enh_parse_arg(int argc, char **argv, int i)
 {
     if (!strcmp(argv[i], "--classic")) {              /* every enhancement off, whatever else is on the command line */
         enh.classic = true; enh.canvas = false; enh.wide = false; enh.render_scale = 0; enh.dither_fine = false; enh.hr_check = false; enh.hr_dump[0] = 0;
+        enh.sandbox_test = 0;
         return 1;
     }
     if (!strcmp(argv[i], "--render-scale") && i + 1 < argc) {
@@ -43,6 +45,12 @@ int enh_parse_arg(int argc, char **argv, int i)
         if (!enh.classic) { snprintf(enh.hr_dump, sizeof enh.hr_dump, "%s", argv[i + 1]); enh.hr_check = true; }
         return 2;
     }
+    if (!strcmp(argv[i], "--sandbox-test") && i + 1 < argc) {
+        int n = atoi(argv[i + 1]);
+        if (!enh.classic) enh.sandbox_test = n < 0 ? 0 : n > 1000 ? 1000 : n;
+        return 2;
+    }
+    if (!strcmp(argv[i], "--sandbox-hash") && i + 1 < argc) { snprintf(enh.sandbox_hash, sizeof enh.sandbox_hash, "%s", argv[i + 1]); return 2; }
     return 0;
 }
 

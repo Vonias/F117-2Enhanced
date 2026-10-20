@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include "render3d/r3d.h"
+#include "enhanced/sandbox.h"      /* ENH: S2.4 */
 
 #define BANK()  DSW(0x8560)
 #define ESW(o)  rd16(BANK(), (u16)(o))
@@ -138,6 +139,7 @@ void r3d_plane_shade(u16 nrm, u16 plane)
 
 /* 11EB:0E5F r3d_bsp_order: the recursion equivalent of the state machine (spec); vis is read when a node is entered */
 static u16 bsp_out;
+void r3d_sandbox_regions(EnhRegionAdd add) { add(&bsp_out, sizeof bsp_out); add(&r3d_bisect_last_bp, sizeof r3d_bisect_last_bp); }   /* ENH: S2.4, render3d statics in the display-pass snapshot */
 static void bsp_visit(u16 pairs, u16 vis, u8 n)
 {
     u8 b0 = ESB(pairs + 2 * n), b1 = ESB(pairs + 2 * n + 1);

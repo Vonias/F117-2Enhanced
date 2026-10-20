@@ -4,6 +4,7 @@
 #include "render3d/r3d.h"
 #include "sim/sim.h"
 #include "sim/sim_priv.h"
+#include "enhanced/sandbox.h"   /* ENH: S2.4 */
 
 #define LONG(o) ((s32)DSL(o))
 
@@ -58,7 +59,7 @@ void r3d_begin_scene(u16 vp, s16 a1, s16 a2, s16 a3, s16 ox, s16 oy, s16 oz, s16
         DSW(0xC686) = 0;
         DSW(0x8560) = DSW(0xB760);
         r3d_shared_verts();
-        while (DSB(0x262A)) host_pump();                                /* the frame tick of the timer ISR clears it */
+        while (DSB(0x262A) && !enh_sbx) host_pump();                    /* the frame tick of the timer ISR clears it; ENH: S2.4, not in a display pass */
         r3d_draw_sky_ground(DSP(vp));
     }
     DSW(0x49C4) = 0;

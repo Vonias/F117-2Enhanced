@@ -9,6 +9,7 @@
 
 #include "enhanced/enh_canvas.h"
 #include "enhanced/enhanced.h"
+#include "enhanced/sandbox.h"
 #include "render3d/r3d.h"
 #include "video/video.h"
 
@@ -21,6 +22,13 @@ static s32 *trace;
 static size_t trace_n, trace_cap;
 static int win_x0, win_y0, win_x1, win_y1;     /* union of the pass windows, layer px (empty when win_x1 < win_x0) */
 static u16 last_seg = 0xA000;
+
+/* S2.4: the hr pass context in the display-pass snapshot (sandbox.h) */
+void hr_sandbox_regions(EnhRegionAdd add)
+{
+    add(&enh_hr, sizeof enh_hr); add(&enh_hr_pt, sizeof enh_hr_pt); add(&last_seg, sizeof last_seg);
+    hr_clip_regions(add); hr_edge2d_regions(add); hr_raster_regions(add);
+}
 
 static void trace_put(s32 v)
 {

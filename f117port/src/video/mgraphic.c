@@ -20,6 +20,7 @@
 
 #include "gen/module_video.h"
 #include "enhanced/enh_canvas.h"   /* ENH: shadow records */
+#include "enhanced/sandbox.h"      /* ENH: S2.4 */
 #include "host.h"
 #include "mem.h"
 #include "platform/vga.h"
@@ -44,6 +45,16 @@ static u16 enc_lead, enc_trail, enc_len, enc_h, enc_w;              /* 834 836 8
 /* The driver image (data segment = image offset 0); fonts at 00D0. */
 static u8 *img;
 static size_t img_len;
+
+/* ENH: S2.4, the driver state in the display-pass snapshot (the driver image too: its data segment is the original's) */
+#define R(v) add(&(v), sizeof(v))
+void mgraphic_sandbox_regions(EnhRegionAdd add)
+{
+    R(page_tab); R(draw_seg); R(draw_off); R(flip_last); R(flip_disable); R(shake); R(colour); R(last_x); R(last_y); R(rng); R(data_cc); R(data_ce);
+    R(pool_off); R(pool_seg); R(pool_base); R(pool_end); R(pool_limit); R(enc_lead); R(enc_trail); R(enc_len); R(enc_h); R(enc_w);
+    if (img && img_len) add(img, img_len);
+}
+#undef R
 
 static inline u16 rowoff(u16 y) { return (u16)(y * 320u); }
 

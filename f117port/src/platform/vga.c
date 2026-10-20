@@ -5,6 +5,7 @@
 
 #include "host.h"
 #include "enhanced/enh_canvas.h"   /* ENH: */
+#include "enhanced/sandbox.h"      /* ENH: S2.4 */
 
 static u8 vram[VGA_VRAM_SIZE];
 static u8 dac[256][3];
@@ -21,6 +22,14 @@ static u8 dac_wbuf[3];
 static u32 last_frame[640 * 400];
 static int frame_w = 320, frame_h = 200;       /* 640 x 400 in text mode (vgatext.c), else 320 x 200 */
 static bool dirty = true;
+
+/* ENH: S2.4, the VGA model in the display-pass snapshot (the composition cache last_frame is output only) */
+void vga_sandbox_regions(EnhRegionAdd add)
+{
+    add(vram, sizeof vram); add(dac, sizeof dac); add(&mode, 1); add(&crtc_index, 1); add(crtc, sizeof crtc); add(&seq_index, 1); add(seq, sizeof seq);
+    add(&gc_index, 1); add(gc, sizeof gc); add(&attr_index, 1); add(attr, sizeof attr); add(&attr_flipflop, sizeof attr_flipflop);
+    add(&dac_windex, 1); add(&dac_wsub, 1); add(&dac_rindex, 1); add(&dac_rsub, 1); add(&dac_state, 1); add(dac_wbuf, sizeof dac_wbuf); add(&dirty, sizeof dirty);
+}
 
 /* 70.086 Hz: frame = 800 x 449 pixel clocks at 25.175 MHz (host.h: the same period as the timer tick);
  * retrace = lines 412..413. */
@@ -263,17 +272,20 @@ static u64 next_retrace_start(u64 t)
 
 void vga_wait_vretrace_end(void)
 {
+    if (enh_sbx) return;                                   /* ENH: S2.4, no wait in a display pass */
     while (vga_in_vretrace()) host_pump();
 }
 
 void vga_wait_vretrace_start(void)
 {
+    if (enh_sbx) return;                                   /* ENH: S2.4 */
     vga_wait_vretrace_end();
     host_wait_until_ns(next_retrace_start(host_ns()));
 }
 
 void vga_wait_vretrace_active(void)
 {
+    if (enh_sbx) return;                                   /* ENH: S2.4 */
     if (vga_in_vretrace()) return;
     host_wait_until_ns(next_retrace_start(host_ns()));
 }

@@ -19,6 +19,7 @@
 static s32 *tab_l, *tab_r;
 static int tab_rows;
 s32 hr_miny = IDLE_L;
+void hr_raster_regions(void (*add)(void *p, size_t n)) { add(&hr_miny, sizeof hr_miny); }
 
 s32 *hr_tab_l(void) { return tab_l; }
 s32 *hr_tab_r(void) { return tab_r; }

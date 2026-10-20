@@ -48,6 +48,13 @@ void hr_line(u16 rec);                             /* r3d_line_M (1359:045D) */
 void hr_sky_ground(void *ctx);                     /* end of r3d_draw_sky_ground (1442) */
 void hr_project_point(s32 X, s32 Y, s32 Z, bool visible);   /* end of r3d_project_point (B85D) */
 
+/* ---- S2.4: the fixed statics of each file for the display-pass snapshot (the row tables tl/tr, tab_l/tab_r are scratch rebuilt from the
+ * faithful R3dWork tables when a pass opens, and are not in it) */
+#include <stddef.h>
+void hr_clip_regions(void (*add)(void *p, size_t n));
+void hr_edge2d_regions(void (*add)(void *p, size_t n));
+void hr_raster_regions(void (*add)(void *p, size_t n));
+
 /* ---- inside the back end */
 typedef struct HrEdge {
     s32 x0, y0, x1, y1;           /* before the clip: projected + centre; after it: the clipped ends */

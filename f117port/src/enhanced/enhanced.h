@@ -13,6 +13,8 @@ typedef struct {
     bool dither_fine;    /* --dither fine: the 3D checkerboard per layer pixel; --dither grid (default): per original pixel (DESIGN 2.4, Q2) */
     bool hr_check;       /* --hr-check: the render test (--render-test) also checks the hr 3D layer against the 1x page (DIR/hr_check.txt) */
     char hr_dump[1024];  /* --hr-dump DIR (implies --hr-check): per render-test scenario DIR/<id>.hrd: the hr trace, the layer, the page (S2.3) */
+    int  sandbox_test;   /* --sandbox-test N: N sandboxed display passes per VGAME frame, nothing shown (S2.4 test; S4.1 runs them for real) */
+    char sandbox_hash[1024];   /* --sandbox-hash FILE: a hash of the sim state per VGAME frame (test aid; also in --classic, it changes nothing) */
 } EnhOptions;
 
 extern EnhOptions enh;
@@ -21,5 +23,7 @@ extern EnhOptions enh;
 int enh_parse_arg(int argc, char **argv, int i);
 /* True when the canvas compositor is wanted (not --classic). */
 bool enh_canvas_on(void);
+/* Display passes wanted (not --classic, not F117_CLASSIC). */
+bool enh_sandbox_on(void);
 /* Options from the environment variable F117_ENH_ARGS (for test drivers that build their own command line); once. */
 void enh_env_args(void);

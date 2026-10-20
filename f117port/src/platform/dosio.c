@@ -10,6 +10,7 @@
 #include "gen/module_platform.h"
 #include "host.h"
 #include "platform/platform.h"
+#include "enhanced/sandbox.h"   /* ENH: S2.4 */
 
 #define MAX_HANDLES 40
 #define FIRST_HANDLE 5
@@ -81,6 +82,7 @@ static FILE *open_host(const char *name, int mode, bool create)
 /* END 0000:400F / START 8075 / SETUP 0DC7 / DSWAP 0599 / VGAME 1199:000C: INT 21h/3Dh; mode bits 0-1 = access */
 int dos_open(char *name, int mode)
 {
+    if (enh_sandbox_deny("dos_open")) return -1;                  /* ENH: S2.4, no file in a display pass */
     FILE *f = open_host(name, mode, false);
     if (!f) dos_fatal(name, ":File not found", -1);               /* DOS errors 2, 3 */
     int fd = handle_new(f, false);
@@ -92,6 +94,7 @@ int dos_open(char *name, int mode)
 /* END 0000:4066 / START 80CC / SETUP 0E1E / DSWAP 05F0 / VGAME 1199:006A: INT 21h/3Ch (create or truncate) */
 int dos_creat(char *name, int attr)
 {
+    if (enh_sandbox_deny("dos_creat")) return -1;                 /* ENH: S2.4 */
     (void)attr;
     FILE *f = open_host(name, 2, true);
     if (!f) dos_fatal(name, ":Open error 5", -1);
@@ -112,6 +115,7 @@ void dos_close(int fd)
 
 static int read_into(int fd, unsigned n, u8 *dst)
 {
+    if (enh_sandbox_deny("dos_read")) return 0;                   /* ENH: S2.4 */
     FILE *f = handle_get(fd);
     if (!f) dos_fatal(NULL, "Read error", 6);                      /* invalid handle */
     return (int)fread(dst, 1, (u16)n, f);
@@ -126,6 +130,7 @@ int dos_read_far(int fd, unsigned n, unsigned off, unsigned seg) { return read_i
 /* END 0000:4199 / START 81FF / SETUP 0F52 / DSWAP 0723: INT 21h/40h from seg:(off + add) */
 int dos_write_far(int fd, unsigned n, unsigned off, unsigned seg, unsigned add)
 {
+    if (enh_sandbox_deny("dos_write")) return 0;                  /* ENH: S2.4 */
     FILE *f = handle_get(fd);
     if (!f) dos_fatal(NULL, "Write error", 6);
     u8 *src = mp((u16)seg, (u16)(off + add));
@@ -210,6 +215,7 @@ void ovl_bind(unsigned seg) { (void)seg; }
 u16 platform_load_file_paras(const char *name, u32 *size)
 {
     if (size) *size = 0;
+    if (enh_sandbox_deny("load_file")) return 0;                  /* ENH: S2.4 */
     char *path = dos_path(name, false);
     if (!path) return 0;
     FILE *f = fopen(path, "rb");                      /* PORT: the original opens "r+b" (read/write) */
@@ -241,6 +247,7 @@ u16 platform_load_file_paras(const char *name, u32 *size)
  * (PORT: the original fails, simflow.md 2). */
 FILE *fopen_fn(char *name, char *mode)
 {
+    if (enh_sandbox_deny("fopen")) return NULL;                   /* ENH: S2.4 */
     bool create = strchr(mode, 'w') || strchr(mode, 'a');
     char *path = dos_path(name, create);
     if (!path) return NULL;
@@ -272,6 +279,7 @@ long lseek_fn(int fd, long off, int whence)
 /* MPS_LOGO 0146:17A2 / START A4B8 / VGAME FA98: INT 21h/41h */
 int unlink_fn(char *name)
 {
+    if (enh_sandbox_deny("unlink")) return -1;                   /* ENH: S2.4 */
     char *path = dos_path(name, false);
     if (!path) return -1;
     int r = remove(path);
@@ -283,6 +291,7 @@ int unlink_fn(char *name)
  * 4000h, O_BINARY 8000h. */
 int rtl_open(char *name, int oflag, int pmode)
 {
+    if (enh_sandbox_deny("rtl_open")) return -1;                   /* ENH: S2.4 */
     (void)pmode;
     bool create = (oflag & 0x100) != 0;
     char *path = dos_path(name, create);
@@ -340,6 +349,7 @@ int rtl_read(int fd, void *buf, unsigned n)
 /* VGAME FCA4: text mode turns LF into CR LF */
 int rtl_write(int fd, void *buf, unsigned n)
 {
+    if (enh_sandbox_deny("rtl_write")) return -1;                   /* ENH: S2.4 */
     FILE *f = handle_get(fd);
     if (!f) { errno = EBADF; return -1; }
     const u8 *b = buf;

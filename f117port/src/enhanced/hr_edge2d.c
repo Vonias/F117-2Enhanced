@@ -25,6 +25,7 @@ static s32 *tl, *tr;
 static int trows;
 static s32 dlo = IDLE_LO, dhi;                      /* the dirty rows 2615 / 2617 */
 static struct { s64 x1, y1, x2, y2; } sg;           /* 2299 / 229D / 229B / 229F */
+void hr_edge2d_regions(void (*add)(void *p, size_t n)) { add(&dlo, sizeof dlo); add(&dhi, sizeof dhi); add(&sg, sizeof sg); }
 
 static s64 wrapn(s64 v) { return hr_fits16(v, N) ? v : (s64)N * (s16)(v / N); }
 

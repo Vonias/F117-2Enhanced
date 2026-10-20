@@ -139,6 +139,7 @@ int main(int argc, char **argv)
         }
         else return usage(argv[0]);
     }
+    enh_env_args();                                            /* ENH: S2.4, F117_ENH_ARGS before anything runs (--sandbox-hash sees the whole chain) */
     if (ktest) return keymap_selftest();                       /* needs neither window nor game files */
     if (check || tick || ptest || etest || vself || decref || feref || shref || dbref || sndref || simref || r3dref || enh.compose_test) cfg.headless = true;
     if (host_trace()) prog_trace = true;

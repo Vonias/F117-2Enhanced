@@ -10,6 +10,7 @@
 #include "sim/sim.h"
 #include "sim/sim_priv.h"
 #include "sim/simtest.h"
+#include "enhanced/sandbox.h"   /* ENH: S2.4 */
 
 SimTest sim_test = { .frames_left = -1, .dive_at = -1 };
 
@@ -76,7 +77,7 @@ void timer_remove_sim(void)
 /* 0000:04BB frame_delay (timer_wait_ticks): spin until the tick byte has advanced `ticks` times (PORT: not in the unit tests, which run without ticks) */
 void frame_delay(int ticks)
 {
-    if ((s16)ticks <= 0 || sim_test.active) return;
+    if ((s16)ticks <= 0 || sim_test.active || enh_sbx) return;   /* ENH: S2.4, no wait in a display pass */
     u8 target = (u8)(ticks + DSB(0x264A));
     while (DSB(0x264A) != target) host_pump();
 }
@@ -408,9 +409,10 @@ void sim_init(void)
 static void frame_floor(void)
 {
     static u64 last;
+    enh_idle();                                          /* ENH: S2.4, display passes (S4.1: one per refresh in the wait below) */
     int n = host_frame_ticks();
     if (n <= 0 || sim_test.active) return;
-    while (host_ticks() - last < (u64)n && !host_quit_requested()) host_pump();
+    while (host_ticks() - last < (u64)n && !host_quit_requested()) { enh_idle(); host_pump(); }   /* ENH: S2.4 */
     last = host_ticks();
 }
 
@@ -438,6 +440,7 @@ static void chain_dive(void)
 void frame_loop_body(void)
 {
     do {
+        enh_frame_begin();                               /* ENH: S2.4, the pre-render image A_k */
         view_frame();
         hud_overlay_frame();
         if (DSW(0xC07A) == 0) {

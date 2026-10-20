@@ -1,0 +1,35 @@
+/* The sandboxed display pass (DESIGN.md 4.1, 4.2; S2.4).
+ *
+ * A display pass re-renders the frame from the pre-render image A_k (taken by enh_frame_begin where the faithful frame starts) and then
+ * puts the live machine back exactly: whatever the render changes (designators, tracer hits, the TV fire-puff LCG, the spinners, the
+ * collision flag, the driver statics, the layers) is thrown away. The image is the whole emulated memory mem[], the VGA model and the
+ * engine statics a render touches (each module registers its own with an ENH: *_sandbox_regions function), plus the canvas layers and
+ * shadow plane (swapped, not copied back). While enh_sbx is set: no sound command, poll, noise or OPL write; no wait that consumes ticks
+ * and no host_pump (so no tick reaches the sim); no DOS file call. A forbidden call is counted (enh_sandbox_deny) and refused.
+ *
+ * S2.4 runs passes only for the test option --sandbox-test N (N passes per frame, from enh_idle); the interpolated passes are S4.1.
+ * --sandbox-hash FILE writes a hash of the sim state per frame (ctest enh_sandbox_hash). --classic: no snapshot, no pass. */
+#pragma once
+
+#include <stddef.h>
+
+#include "types.h"
+
+extern bool enh_sbx;                                    /* a display pass is running */
+
+typedef void (*EnhRegionAdd)(void *p, size_t n);
+/* Each module with statics a render may write lists them (called once, when the sandbox builds its region table). */
+void vga_sandbox_regions(EnhRegionAdd add);             /* platform/vga.c: vram, DAC, CRTC, sequencer, GC, attribute, DAC ports */
+void mgraphic_sandbox_regions(EnhRegionAdd add);        /* video/mgraphic.c: page table, draw segment, colour, rng, shake, pool, driver image */
+void pic_sandbox_regions(EnhRegionAdd add);             /* video/pic.c: the decoder state, rle_out */
+void r3d_sandbox_regions(EnhRegionAdd add);             /* render3d/r3d_object.c: bsp_out */
+void hr_sandbox_regions(EnhRegionAdd add);              /* enhanced/hr_*.c: the hr pass context and the persistent scalars */
+
+/* Hooks */
+void enh_frame_begin(void);                             /* sim_main.c frame_loop_body, before view_frame: A_k, the --sandbox-hash line */
+void enh_idle(void);                                    /* sim_main.c frame_floor and its wait loop: the display passes due now */
+bool enh_sandbox_deny(const char *what);                /* true (and counted) inside a pass: the caller must not go on */
+void enh_opl_trace(u8 reg, u8 val);                     /* host.c host_opl_write: the OPL register stream for --sandbox-hash */
+
+/* One display pass now (from enh_idle; needs a valid A_k). v > 0: the test view v of --sandbox-test (sandbox.c test_view). */
+void enh_display_pass(int v);

@@ -15,6 +15,7 @@
 #include "host.h"
 #include "mem.h"
 #include "video/video.h"
+#include "enhanced/sandbox.h"      /* ENH: S2.4 */
 
 #define PIC_PIXELS 64000
 
@@ -148,6 +149,7 @@ void pic_begin(void)
  * `90 n` repeats the previous byte n-1 times more: the counter is set to n-1, then decremented once more for the byte
  * emitted at once (8945..894D), exactly as the original. */
 static int rle_out;
+void pic_sandbox_regions(EnhRegionAdd add) { add(&D, sizeof D); add(&rle_out, sizeof rle_out); }   /* ENH: S2.4, the decoder state in the display-pass snapshot */
 void rle90_fill(unsigned n)
 {
     u16 cnt = (u16)n;

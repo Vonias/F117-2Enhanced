@@ -28,6 +28,8 @@ static struct {
     s32 clip_dx, clip_dy;
 } st;
 
+void hr_clip_regions(void (*add)(void *p, size_t n)) { add(vtx, sizeof vtx); add(edges, sizeof edges); add(&closing, sizeof closing); add(&st, sizeof st); }
+
 #define N (enh_hr.n)
 
 /* the assembler state of a pass starts from the faithful one (R3dWork), scaled */
