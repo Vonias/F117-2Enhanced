@@ -37,6 +37,7 @@ static s32 row_dot(int row, int dx, int dy, int dz)
  * [DE92] the depth */
 void r3d_project_point(int x_u, int y_u, int z)
 {
+    if (enh_shadow_on) enh_hr_pt.valid = false;   /* ENH: S3.1, an early return leaves no hr point */
     s16 dx = (s16)((s16)DSW(0xC0A4) - (s16)x_u);
     s16 dy = (s16)((s16)y_u - (s16)DSW(0xC0B2));
     s16 dz = (s16)((s16)((s16)z - (s16)DSW(0x2DF4)) >> 5);
@@ -76,6 +77,7 @@ void hud_target_box(int x, int y, int size, int hex, int colour)
     s16 t = (s16)(sz - (s16)(sz >> 2));
     s16 B = (s16)(t + (s16)y), T = (s16)((s16)y - t);
     gfx_set_fg(colour);
+    bool enh_bx = enh_shadow_on && enh_box_begin();   /* ENH: S3.1, the outline is drawn again at N x */
     if (hex == 0) {
         hud_line_win(L, T, L, B);
         hud_line_win(L, B, R, B);
@@ -91,6 +93,7 @@ void hud_target_box(int x, int y, int size, int hex, int colour)
         hud_line_win(L, di, L, si);
         hud_line_win(L, si, x, T);
     }
+    if (enh_bx) enh_box_end(x, y, sz, hex, colour);   /* ENH: S3.1 */
 }
 
 /* 0000:B339 hud_draw_diamond (spec 2): a small diamond at the projected point */
@@ -98,10 +101,12 @@ void hud_draw_diamond(void)
 {
     s16 sx = (s16)DSW(0x49E0), sy = (s16)DSW(0x49E8);
     gfx_set_fg(HUDCOL);
+    bool enh_dm = enh_shadow_on && enh_box_begin();   /* ENH: S3.1 */
     hud_line_win(sx - 4, sy, sx, sy - 4);
     hud_line_win(sx, sy - 4, sx + 4, sy);
     hud_line_win(sx + 4, sy, sx, sy + 4);
     hud_line_win(sx, sy + 4, sx - 4, sy);
+    if (enh_dm) enh_diamond_end(sx, sy, HUDCOL);   /* ENH: S3.1 */
 }
 
 /* 0000:B3B3 hud_update_aspect_label (spec 2): the looking direction label follows the heading of the previewed target */
@@ -219,11 +224,14 @@ void obj_overlay_frame(void)
         if (DSW(b) == 0) continue;
         r3d_project_point((s16)DSW(b), (s16)DSW((u16)(b + 2)), (s16)DSW((u16)(b + 4)));
         s16 p0x = (s16)DSW(0x49E0), p0y = (s16)DSW(0x49E8);
+        if (enh_shadow_on) enh_tracer_p0();   /* ENH: S3.1, the hr tail of the tracer */
         r3d_project_point((s16)(DSW(b) + ((s16)DSW((u16)(b + 6)) >> 1)), (s16)(DSW((u16)(b + 2)) + ((s16)DSW((u16)(b + 8)) >> 1)), (s16)(DSW((u16)(b + 4)) + ((s16)DSW((u16)(b + 0xA)) >> 1)));
         if (DSW(0x49E0) == 0xFFFF) continue;
         if (p0x == -1) continue;
         gfx_set_fg(i < (s16)DSW(0xB16C) ? 0x0D : 0x29);
+        bool enh_tr = enh_shadow_on && enh_tracer_begin();   /* ENH: S3.1, the tracer is drawn again at N x */
         hud_line_view((s16)DSW(0x49E0), (s16)DSW(0x49E8), p0x, p0y);
+        if (enh_tr) enh_tracer_end(i < (s16)DSW(0xB16C) ? 0x0D : 0x29);   /* ENH: S3.1 */
         int hit = 0;
         if (i < (s16)DSW(0xB16C)) {                                       /* a round of the player against the units */
             for (int j = 0; j < (s16)DSW(0xDED0); j++) {
@@ -301,7 +309,10 @@ void obj_overlay_frame(void)
         if (DSW(0x49E0) != 0xFFFF) {
             s16 dep = (s16)DSW(0xDE92);
             s16 size = (s16)abs16(dep != 0 ? 0x100 / dep : 0);
-            if ((s16)DSW(0xC0B0) > 0) sim_fx_explosion_sprite((s16)DSW(0x49E0), (s16)DSW(0x49E8), size, 0x10 - abs16((s16)DSW(0x9D0C)));
+            if ((s16)DSW(0xC0B0) > 0) {
+                if (enh_shadow_on) enh_expl_pending(dep);   /* ENH: S3.1, the explosion sprite at N x */
+                sim_fx_explosion_sprite((s16)DSW(0x49E0), (s16)DSW(0x49E8), size, 0x10 - abs16((s16)DSW(0x9D0C)));
+            }
         }
         DSW(0x9D0C) = (u16)(DSW(0x9D0C) - (u16)lib_sign((s16)DSW(0x9D0C)));
         if (DSW(0x9D0C) == 0) DSW(0x98FE) = 0xFFFF;

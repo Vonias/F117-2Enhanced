@@ -16,6 +16,7 @@
 
 typedef struct HrCtx {
     bool on;                      /* a 3D pass that draws into the layer is open */
+    bool have;                    /* S3.1: the window / layer fields below describe the last pass on a tracked page (stays true after r3d_end_scene, for the overlay pass A17E) */
     int n, fx, fy;                /* scale and frame origin in layer pixels */
     int lw, lh;                   /* layer size */
     u16 *layer;                   /* the 3D layer being drawn (enh_layer3d) */
@@ -32,7 +33,7 @@ typedef struct HrCtx {
 extern HrCtx enh_hr;
 
 /* hr position of the last r3d_project_point (B85D) call, for the emitters of the same object (S3.1) */
-typedef struct { bool valid; s32 x, y; } HrPoint;
+typedef struct { bool valid; s32 x, y; s32 size; } HrPoint;   /* size: the hr size (layer px) of the sprite of this point when a caller computed it, else 0 */
 extern HrPoint enh_hr_pt;
 
 #define ENH_HR(call) do { if (enh_hr.on) { call; } } while (0)
@@ -47,6 +48,25 @@ void hr_poly_finish(void);                         /* end of r3d_poly_finish (12
 void hr_line(u16 rec);                             /* r3d_line_M (1359:045D) */
 void hr_sky_ground(void *ctx);                     /* end of r3d_draw_sky_ground (1442) */
 void hr_project_point(s32 X, s32 Y, s32 Z, bool visible);   /* end of r3d_project_point (B85D) */
+
+/* ---- S3.1 (hr_obj.c): the objects the world pass 9ACA and the overlay pass A17E draw at 1x on top of the scene: sprites (smoke billboards 1AD6, the
+ * explosion 1A85), the far dots, the tracers and the target boxes. Each is emitted at N x from the hr point of B85D; the 1x footprint stays on the page
+ * (and in the shadow) but is not stamped / shown. All hooks are behind enh_shadow_on. */
+void hr_obj_pass_begin(void);                      /* a pass opens: the billboard table is cleared */
+void enh_bill_size(int mode, int d);               /* 9ACA (B): the hr size of the puff just projected (lib_scale_eighths(mode, |0x100 N / d|)) */
+void enh_bill_note(void);                          /* r3d_queue_billboard, before the insert: the hr point and size of the record the insert will fill */
+void enh_bill_pending(u16 rec);                    /* r3d_draw_queued, before the billboard sprite of `rec` */
+void enh_expl_pending(int dep);                    /* A17E S3, before the explosion sprite: B85D's point, size |0x100 N / dep| */
+bool enh_sprite_begin(u16 ctx);                    /* sprite(), before sprite_scaled: true = an hr sprite follows (1x footprint recorded, not stamped) */
+void enh_sprite_end(u16 off, u16 seg, int size);   /* sprite(), after: draws the hr sprite (the source bitmap at off in seg, 1x size `size`) */
+void enh_dot_begin(void);                          /* 9ACA (D)/(E): around the one-pixel far dot (hud_line_view of one point) */
+void enh_dot_end(int colour);
+void enh_tracer_p0(void);                          /* A17E S2: B85D's point after the first projection (the tail of the tracer) */
+bool enh_tracer_begin(void);                       /* before the hud_line_view of the tracer: true = an hr line follows */
+void enh_tracer_end(int colour);
+bool enh_box_begin(void);                          /* hud_target_box / hud_draw_diamond: true = an hr outline follows (the 1x lines are a footprint) */
+void enh_box_end(int x, int y, int sz, int hex, int colour);   /* hud_target_box after the lines: sz = the half size after the 294B halving */
+void enh_diamond_end(int sx, int sy, int colour);
 
 /* ---- S2.4: the fixed statics of each file for the display-pass snapshot (the row tables tl/tr, tab_l/tab_r are scratch rebuilt from the
  * faithful R3dWork tables when a pass opens, and are not in it) */
@@ -90,4 +110,5 @@ void hr_trace_poly(s32 ox, s32 oy, u8 colour, int n, const s64 *pts);
 
 /* ---- --hr-check (the render test): per scenario statistics of the hr layer against the 1x page */
 void enh_hr_test_begin(void);                      /* simtest "scn": canvas on at --render-scale, layers and shadow cleared */
-void enh_hr_test_end(const char *dir, const char *id);   /* simtest "end": one line into DIR/hr_check.txt */
+void enh_hr_test_end(const char *dir, const char *id);
+void hr_obj_stats(long *sprites, long *sprite_px, long *dots, long *lines, long *line_px, bool reset);   /* S3.1: what the emitters drew since the last reset */   /* simtest "end": one line into DIR/hr_check.txt */

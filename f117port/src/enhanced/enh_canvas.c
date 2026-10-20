@@ -12,7 +12,7 @@
 #define PAGE_PIXELS 64000
 #define MAX_SIDE 8192
 
-enum { SRC_NONE, SRC_3D, SRC_VEC };
+enum { SRC_NONE, SRC_3D, SRC_VEC, SRC_VECHR };   /* SRC_VECHR (S3.1): a 1x vector write whose N x look is emitted by an hr emitter (hr_obj.c): no hr pixel -> what was under it */
 
 typedef struct {
     u8 src;       /* SRC_*: who wrote the pixel last */
@@ -24,6 +24,8 @@ typedef struct {
 EnhCanvas enh_cv = { 320, 200, 1, 0, 0, 0, 0, 320, 200 };
 bool enh_shadow_on;
 int enh_route;
+int enh_stamp_hold;   /* S3.1: > 0 = the 1x writes of a 3D pass are recorded but not stamped (an hr emitter draws the object itself) */
+int enh_vec_hold;     /* S3.1: > 0 = the 1x line()/put_pixel writes are an hr emitter's (SRC_VECHR) */
 
 static bool active;
 static EnhView view = ENH_VIEW_MENU;
@@ -125,7 +127,7 @@ static bool rec_ok(u16 seg, u16 off) { return off < PAGE_PIXELS && enh_page_trac
  * original pixel: its block of the 3D layer gets the value (bit 9 marks it, for --hr-check); a later hr write replaces it */
 static void stamp3d(u16 seg, u16 off, u8 val)
 {
-    if (!l3d_work || (enh_hr.on && seg != enh_hr.seg)) return;   /* the other page during an hr pass (the TV camera's backdrop): not this layer */
+    if (enh_stamp_hold > 0 || !l3d_work || (enh_hr.on && seg != enh_hr.seg)) return;   /* the other page during an hr pass (the TV camera's backdrop): not this layer */
     int x = off % 320, y = off / 320, n = enh_cv.n;
     u16 *p = l3d_work + (size_t)(enh_cv.fy + y * n) * enh_cv.lw + (size_t)(enh_cv.fx + x * n);
     for (int ky = 0; ky < n; ky++, p += enh_cv.lw)
@@ -148,10 +150,14 @@ void enh_rec_line(u16 seg, u16 off, u8 val)
     u8 old = seg_ptr(seg)[off];
     bool fresh = r->src != SRC_NONE && old == r->val;
     if (!fresh) vec_clear_block(off);
-    if (r->src == SRC_VEC && fresh) { r->val = val; return; }       /* a line over a line keeps what was below both */
+    if ((r->src == SRC_VEC || r->src == SRC_VECHR) && fresh) {      /* a line over a line keeps what was below both */
+        r->val = val;
+        if (enh_vec_hold <= 0) r->src = SRC_VEC;                    /* a classic line over an hr one: shown as its original pixel */
+        return;
+    }
     r->under3d = (u8)(r->src == SRC_3D && fresh);
     r->under = old;
-    r->src = SRC_VEC;
+    r->src = enh_vec_hold > 0 ? SRC_VECHR : SRC_VEC;
     r->val = val;
 }
 
@@ -231,8 +237,12 @@ void enh_flip(unsigned bytes)
 /* ---------------------------------------------------------------- compose (2.5) */
 
 /* idx/sidx: the shown 320x200 page and the page offset of each pixel (0xFFFF = none); pal: the live DAC as XRGB. */
-static void compose_canvas(u32 *out, const u8 *idx, const u16 *sidx, const u32 *pal, bool screen)
+typedef struct { const Shadow *sh; const u16 *l3, *lv; } ComposeSrc;   /* the shadow plane and the 3D / vector layers being composed */
+
+static void compose_canvas(u32 *out, const u8 *idx, const u16 *sidx, const u32 *pal, bool screen, const ComposeSrc *cs)
 {
+    const Shadow *sh_shown = cs->sh;
+    const u16 *l3d_shown = cs->l3, *lvec_shown = cs->lv;
     const int lw = enh_cv.lw, lh = enh_cv.lh, n = enh_cv.n, fx = enh_cv.fx, fy = enh_cv.fy;
     memset(out, 0, (size_t)lw * (size_t)lh * sizeof(u32));
     if (!screen) return;
@@ -271,7 +281,7 @@ static void compose_canvas(u32 *out, const u8 *idx, const u16 *sidx, const u32 *
                 for (int by = 0; by < n && !any; by++)
                     for (int kx = 0; kx < n; kx++)
                         if (lvec_shown[(size_t)(fy + y * n + by) * lw + (size_t)(fx + x * n + kx)] & 0x100) { any = true; break; }
-                if (!any) { for (int kx = 0; kx < n; kx++) o[kx] = pal[v]; continue; }   /* nothing emitted yet: the original pixel */
+                if (!any && r->src != SRC_VECHR) { for (int kx = 0; kx < n; kx++) o[kx] = pal[v]; continue; }   /* nothing emitted: the original pixel */
                 for (int kx = 0; kx < n; kx++) {
                     u16 lv = lvec_shown[at + kx];
                     u16 l3 = l3d_shown[at + kx];
@@ -291,11 +301,48 @@ bool enh_compose_vga(u32 *xrgb)
     u32 pal[256];
     const size_t px = (size_t)enh_cv.lw * (size_t)enh_cv.lh;
     bool screen = vga_shown_frame(idx, sidx, pal);
-    compose_canvas(xrgb, idx, sidx, pal, screen);
+    const ComposeSrc cs = { sh_shown, l3d_shown, lvec_shown };
+    compose_canvas(xrgb, idx, sidx, pal, screen, &cs);
     if (last_px == px && last && !memcmp(last, xrgb, px * sizeof(u32))) return false;
     if (last_px != px) { free(last); last = malloc(px * sizeof(u32)); last_px = last ? px : 0; }
     if (last) memcpy(last, xrgb, px * sizeof(u32));
     return true;
+}
+
+/* S3.1 test aid (the hr check and the dumps of the render test): the frame being drawn (the work shadow and layers) composed from `page` (the
+ * 320x200 page of its pass) with `pal` (256 entries). Same rule as the present path. */
+void enh_compose_work(u32 *out, const u8 *page, const u32 *pal)
+{
+    static u16 ident[PAGE_PIXELS];
+    if (ident[1] == 0) for (int i = 0; i < PAGE_PIXELS; i++) ident[i] = (u16)i;
+    const ComposeSrc cs = { sh_work, l3d_work, lvec_work };
+    compose_canvas(out, page, ident, pal, true, &cs);
+}
+
+/* ---------------------------------------------------------------- hr vector emitters (S3.1) */
+
+/* A vector layer pixel (layer coordinates) of an hr emitter. The page pixel whose block it lies in becomes a vector record whose "nothing emitted" look is what
+ * was under it (SRC_VECHR) unless it is one already, so an hr line shows where the 1x line did not reach and the 1x footprint shows nothing where it did. */
+void enh_vec_put(int lx, int ly, u8 c)
+{
+    const int n = enh_cv.n;
+    if (!lvec_work || lx < enh_cv.fx || ly < enh_cv.fy || lx >= enh_cv.lw || ly >= enh_cv.lh) return;
+    int px = (lx - enh_cv.fx) / n, py = (ly - enh_cv.fy) / n;
+    if (px > 319 || py > 199) return;
+    const u16 seg = video_draw_seg(), off = (u16)(py * 320 + px);
+    if (enh_page_tracked(seg)) {
+        Shadow *r = &sh_work[off];
+        const u8 pv = seg_ptr(seg)[off];
+        const bool fresh = r->src != SRC_NONE && r->val == pv;
+        if (!(fresh && (r->src == SRC_VEC || r->src == SRC_VECHR))) {
+            if (!fresh) vec_clear_block(off);
+            r->under3d = (u8)(r->src == SRC_3D && fresh);
+            r->under = pv;
+            r->src = SRC_VECHR;
+            r->val = pv;
+        }
+    }
+    lvec_work[(size_t)ly * enh_cv.lw + lx] = (u16)(0x100 | c);
 }
 
 /* ---------------------------------------------------------------- display-pass snapshots (S2.4, sandbox.c) */

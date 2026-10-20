@@ -243,6 +243,7 @@ void r3d_queue_billboard(u16 id, s32 x, s32 y, s16 z, s16 sx, s16 sy, s16 size)
     DSW(0x497A) = 2;
     if (r3d_cull_point(DSS(0x4964), DSS(0x4966), DSS(0x4968))) return;
     DSW(0x4956) = id; DSW(0x496A) = (u16)sx; DSW(0x496C) = (u16)sy; DSW(0x496E) = (u16)size;
+    if (enh_shadow_on) enh_bill_note();                                  /* ENH: S3.1, the hr point and size of this billboard */
     r3d_queue_insert();
 }
 
@@ -284,7 +285,10 @@ void r3d_queue_insert(void)
 static void sprite(u16 ctx, u16 tab, s16 x, s16 y, s16 size, s16 cls)
 {
     s16 dh = (s16)(size - (size >> 2));                                 /* the y offset is half of dh, not of size (cwd on the dh still in AX) */
-    sprite_scaled(DSP(ctx), x - size / 2, y - dh / 2, size, dh, DSW((u16)(tab + 4 * cls)), DSW((u16)(tab + 4 * cls + 2)));
+    u16 off = DSW((u16)(tab + 4 * cls)), seg = DSW((u16)(tab + 4 * cls + 2));
+    bool hr = enh_shadow_on && enh_sprite_begin(ctx);                    /* ENH: S3.1, the sprite is drawn again at N x (hr_obj.c) */
+    sprite_scaled(DSP(ctx), x - size / 2, y - dh / 2, size, dh, off, seg);
+    if (hr) enh_sprite_end(off, seg, size);                              /* ENH: S3.1 */
 }
 void r3d_sprite_main(s16 x, s16 y, s16 size, s16 cls) { sprite(DSW(0x0344), 0x91D8, x, y, size, cls); }
 void r3d_sprite_tv(s16 x, s16 y, s16 size, s16 cls) { sprite(DSW(0x4042), 0x91D8, x, y, size, cls); }
@@ -301,7 +305,7 @@ void r3d_draw_queued(void)
         if (DSW((u16)(rec + 8)) & 0x8000) { DSW(0xC030) = 1; v = 0; } else { DSW(0xC030) = 0; v = DSW(0x9874); }
         DSW(0xC044) = v; DSW(0xC042) = v;
         u16 t = DSW((u16)(rec + 8));
-        if (t & 0x0400) { r3d_sprite_main(DSS((u16)(rec + 0x10)), DSS((u16)(rec + 0x12)), DSS((u16)(rec + 0x14)), (s16)(t & 7)); continue; }
+        if (t & 0x0400) { if (enh_shadow_on) enh_bill_pending(rec); r3d_sprite_main(DSS((u16)(rec + 0x10)), DSS((u16)(rec + 0x12)), DSS((u16)(rec + 0x14)), (s16)(t & 7)); continue; }
         DSB(0x4894) = DSB((u16)(rec + 4));
         DSW(0x4956) = t & 0x7FFF;
         DSW(0x4964) = DSW((u16)(rec + 0xA)); DSW(0x4966) = DSW((u16)(rec + 0xC)); DSW(0x4968) = DSW((u16)(rec + 0xE));

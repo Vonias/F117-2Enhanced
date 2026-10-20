@@ -108,6 +108,7 @@ void r3d_draw_world_objects(void)
         s16 d = DSS(0xDE92);
         if (DSW(0x49E0) == 0xFFFF || !(d < 0 && d > -0x100)) continue;
         s16 size = (s16)lib_scale_eighths(DSS((u16)(P + 6)), abs16((s16)(0x100 / d)));
+        if (enh_shadow_on) enh_bill_size(DSS((u16)(P + 6)), d);   /* ENH: S3.1 */
         r3d_queue_billboard((u16)(0x400 + ((DSW((u16)(P + 6)) & 0x0E) >> 1)), (s32)((u32)DSW(P) << 5), (s32)((u32)DSW((u16)(P + 2)) << 5), DSS((u16)(P + 4)),
                             DSS(0x49E0), DSS(0x49E8), size);
     }
@@ -136,7 +137,13 @@ void r3d_draw_world_objects(void)
         r3d_project_point(DSS(U), DSS((u16)(U + 2)), DSS((u16)(U + 4)));
         if (DSS(0xDE92) >= 0 || DSW(0x49E0) == 0xFFFF) continue;
         DSW(0xDE92) = (u16)(DSS(0xDE92) >> hi);
-        if (DSS(0xDE92) <= -0x20) { gfx_set_fg(0x0F); hud_line_view(DSS(0x49E0), DSS(0x49E8), DSS(0x49E0), DSS(0x49E8)); continue; }
+        if (DSS(0xDE92) <= -0x20) {
+            gfx_set_fg(0x0F);
+            if (enh_shadow_on) enh_dot_begin();   /* ENH: S3.1, the dot at N x */
+            hud_line_view(DSS(0x49E0), DSS(0x49E8), DSS(0x49E0), DSS(0x49E8));
+            if (enh_shadow_on) enh_dot_end(0x0F);   /* ENH: S3.1 */
+            continue;
+        }
         if (DSS((u16)(U + 4)) < 0x3E7 && DSW(0x3658) == 0) {
             s16 shadow_alt = 0;
             u16 s = (u16)(0xB2A4 + 16 * DSW(0xDFE0));
@@ -164,7 +171,13 @@ void r3d_draw_world_objects(void)
         if (DSW((u16)(Wp + 0xE)) == 0) continue;
         r3d_project_point(DSS(Wp), DSS((u16)(Wp + 2)), DSS((u16)(Wp + 4)));
         if (DSW(0x49E0) == 0xFFFF) continue;
-        if (DSS(0xDE92) <= -0x20) { gfx_set_fg(i < 8 ? 0x29 : 0x0D); hud_line_view(DSS(0x49E0), DSS(0x49E8), DSS(0x49E0), DSS(0x49E8)); continue; }
+        if (DSS(0xDE92) <= -0x20) {
+            gfx_set_fg(i < 8 ? 0x29 : 0x0D);
+            if (enh_shadow_on) enh_dot_begin();   /* ENH: S3.1 */
+            hud_line_view(DSS(0x49E0), DSS(0x49E8), DSS(0x49E0), DSS(0x49E8));
+            if (enh_shadow_on) enh_dot_end(i < 8 ? 0x29 : 0x0D);   /* ENH: S3.1 */
+            continue;
+        }
         r3d_draw_model(DSW((u16)(0x3372 + 0x12 * DSW((u16)(Wp + 0x10)))), (s32)((u32)DSW(Wp) << 5), (s32)((u32)DSW((u16)(Wp + 2)) << 5), DSS((u16)(Wp + 4)),
                        DSS((u16)(Wp + 8)), DSS((u16)(Wp + 0xA)), (s16)(DSW((u16)(Wp + 0xC)) + 0x2000), (s16)(3 - lib_sign(hi)));
     }

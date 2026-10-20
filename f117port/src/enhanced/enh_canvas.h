@@ -31,6 +31,8 @@ extern bool enh_shadow_on;      /* the writers of video/mgraphic.c record into t
 
 typedef enum { ENH_ROUTE_ART, ENH_ROUTE_3D } EnhRoute;
 extern int enh_route;           /* set by the 3D pass (S2.2): primitives written now are 3D-layer writes */
+extern int enh_stamp_hold;      /* S3.1: > 0 = 3D-route 1x writes are recorded in the shadow but not stamped into the 3D layer */
+extern int enh_vec_hold;        /* S3.1: > 0 = the 1x vector writes now are an hr emitter's footprint (hr_obj.c emits the N x look) */
 
 /* Active = VGA mode 13h is set and the canvas is on. */
 bool enh_canvas_active(void);
@@ -65,6 +67,8 @@ void enh_flip(unsigned bytes);                          /* the page flip copied 
 
 /* Layers for the emitters (S2.2, S3.x): 16-bit entries, bit 8 = written, low byte = DAC index (bit 9: a stamped 1x value, see
  * enh_rec_fill). Work = being drawn, shown = flipped. */
+void enh_vec_put(int lx, int ly, u8 c);                 /* S3.1: a vector-layer pixel of an hr emitter, layer coordinates; marks its page pixel */
+void enh_compose_work(u32 *out, const u8 *page, const u32 *pal);   /* S3.1 test aid: the frame being drawn composed from `page` */
 u16 *enh_layer3d(void);
 u16 *enh_layer_vec(void);
 

@@ -97,6 +97,8 @@ void enh_r3d_viewport(u16 vp)
     if (enh_hr.on && enh.hr_check) pass_stats();             /* a pass left open (a nested begin without its end) */
     enh_route = ENH_ROUTE_3D;
     enh_hr.on = false;
+    enh_hr.have = false;
+    hr_obj_pass_begin();
     u16 seg = DSW(0x85EA);
     if (!enh_page_tracked(seg)) return;
     const int x0 = DSS(0x85CA), y0 = DSS(0x85CC), x1 = DSS(0x85CE), y1 = DSS(0x85D0);
@@ -117,6 +119,7 @@ void enh_r3d_viewport(u16 vp)
     h->line_o = (n - h->line_w) / 2;
     h->fine = enh.dither_fine;
     h->on = true;
+    h->have = true;
     last_seg = seg;
     if (hr_tracing) {
         s32 w[4] = { h->xmin, h->ymin, h->xmax, h->ymax };
@@ -144,6 +147,7 @@ void enh_r3d_end(void)
  * only when the call left [49E0] != FFFFh (an early return of B85D does not reach this hook). */
 void hr_project_point(s32 X, s32 Y, s32 Z, bool visible)
 {
+    enh_hr_pt.size = 0;
     if (!enh_layer3d() || Z == 0) { enh_hr_pt.valid = false; return; }
     const int n = enh_cv.n;
     s64 xw = (s32)((u32)X << 8), yw = (s32)((u32)Y << 8);
@@ -172,6 +176,7 @@ void enh_hr_test_begin(void)
     enh_layers_reset();
     enh_hr.on = false;
     memset(&hs, 0, sizeof hs);
+    { long a, b, c, d, e; hr_obj_stats(&a, &b, &c, &d, &e, true); }
     trace_n = 0;
     hr_tracing = enh.hr_dump[0] != 0;
     win_x0 = win_y0 = 0; win_x1 = win_y1 = -1;
@@ -208,6 +213,59 @@ static void write_dump(const char *id)
     fclose(f);
 }
 
+/* S3.1: the whole frame as the compositor makes it (the work shadow and layers over the page of the last pass) against the 1x page: at N = 1 every
+ * pixel must be equal (sprites, dots, tracers, boxes, the keyed art of every view included); at N > 1 the layer pixels of a block equal its 1x pixel except
+ * at edges ("interior" blocks: the 3x3 1x pixels around are one value). Also the canvas as RGB for the dumps (DIR/<id>.cmp). */
+static struct { long px, differ, inner, inner_differ; } fs;
+
+static void frame_check(const char *id)
+{
+    const int n = enh_cv.n, lw = enh_cv.lw, lh = enh_cv.lh;
+    u32 *img = malloc((size_t)lw * (size_t)lh * sizeof(u32));
+    if (!img) return;
+    u32 pal[256];
+    for (int i = 0; i < 256; i++) pal[i] = (u32)i;
+    const u8 *pg = seg_ptr(last_seg);
+    enh_compose_work(img, pg, pal);
+    memset(&fs, 0, sizeof fs);
+    for (int y = 0; y < 200; y++)
+        for (int x = 0; x < 320; x++) {
+            const u8 v = pg[y * 320 + x];
+            bool inner = x > 0 && x < 319 && y > 0 && y < 199;
+            for (int dy = -1; dy <= 1 && inner; dy++)
+                for (int dx = -1; dx <= 1; dx++) if (pg[(y + dy) * 320 + x + dx] != v) { inner = false; break; }
+            for (int ky = 0; ky < n; ky++)
+                for (int kx = 0; kx < n; kx++) {
+                    const bool same = img[(size_t)(enh_cv.fy + y * n + ky) * lw + (size_t)(enh_cv.fx + x * n + kx)] == v;
+                    fs.px++;
+                    if (!same) fs.differ++;
+                    if (inner) { fs.inner++; if (!same) fs.inner_differ++; }
+                }
+        }
+    if (enh.hr_dump[0] && id) {                       /* the composed canvas with the DAC, for the dump tools */
+        u8 dac[768];
+        dac_get(0, 256, dac);
+        char path[2400];
+        snprintf(path, sizeof path, "%s/%s.cmp", enh.hr_dump, id);
+        FILE *f = fopen(path, "wb");
+        if (f) {
+            s32 hd[2] = { lw, lh };
+            fwrite(hd, 4, 2, f);
+            fwrite(dac, 1, 768, f);
+            u8 *row = malloc((size_t)lw);
+            if (row) {
+                for (int y = 0; y < lh; y++) {
+                    for (int x = 0; x < lw; x++) row[x] = (u8)img[(size_t)y * lw + x];
+                    fwrite(row, 1, (size_t)lw, f);
+                }
+                free(row);
+            }
+            fclose(f);
+        }
+    }
+    free(img);
+}
+
 void enh_hr_test_end(const char *dir, const char *id)
 {
     static bool first = true;
@@ -216,12 +274,16 @@ void enh_hr_test_end(const char *dir, const char *id)
     enh_hr.on = false;
     enh_route = ENH_ROUTE_ART;
     write_dump(id);
+    frame_check(id);
     char path[2300];
     snprintf(path, sizeof path, "%s/hr_check.txt", dir);
     FILE *f = fopen(path, first ? "w" : "a");
     first = false;
     if (!f) return;
-    fprintf(f, "%s n=%d passes=%d checked=%ld hr=%ld stamped=%ld agree=%ld differ=%ld empty=%ld inner=%ld inner_differ=%ld\n", id, enh_cv.n, hs.passes, hs.checked, hs.hr, hs.stamped,
-            hs.agree, hs.differ, hs.empty, hs.inner, hs.inner_differ);
+    long sp, spx, dots, lines, lpx;
+    hr_obj_stats(&sp, &spx, &dots, &lines, &lpx, true);
+    fprintf(f, "%s n=%d passes=%d checked=%ld hr=%ld stamped=%ld agree=%ld differ=%ld empty=%ld inner=%ld inner_differ=%ld "
+               "fpx=%ld fdiffer=%ld finner=%ld finner_differ=%ld sprites=%ld sprite_px=%ld dots=%ld lines=%ld line_px=%ld\n", id, enh_cv.n, hs.passes, hs.checked, hs.hr, hs.stamped,
+            hs.agree, hs.differ, hs.empty, hs.inner, hs.inner_differ, fs.px, fs.differ, fs.inner, fs.inner_differ, sp, spx, dots, lines, lpx);
     fclose(f);
 }
