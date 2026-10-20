@@ -10,9 +10,43 @@
 #include "enhanced/enh_canvas.h"
 #include "enhanced/enhanced.h"
 #include "render3d/r3d.h"
+#include "video/video.h"
 
 HrCtx enh_hr;
 HrPoint enh_hr_pt;
+
+/* --hr-dump trace (hr.h) and the scenario's pass windows */
+bool hr_tracing;
+static s32 *trace;
+static size_t trace_n, trace_cap;
+static int win_x0, win_y0, win_x1, win_y1;     /* union of the pass windows, layer px (empty when win_x1 < win_x0) */
+static u16 last_seg = 0xA000;
+
+static void trace_put(s32 v)
+{
+    if (trace_n == trace_cap) {
+        size_t c = trace_cap ? trace_cap * 2 : 1 << 16;
+        s32 *t = realloc(trace, c * sizeof *t);
+        if (!t) { hr_tracing = false; return; }
+        trace = t; trace_cap = c;
+    }
+    trace[trace_n++] = v;
+}
+
+void hr_trace(int type, int nargs, const s32 *a)
+{
+    trace_put(type);
+    for (int i = 0; i < nargs; i++) trace_put(a[i]);
+}
+
+void hr_trace_poly(s32 ox, s32 oy, u8 colour, int n, const s64 *pts)
+{
+    trace_put(5); trace_put(ox); trace_put(oy); trace_put(colour); trace_put(n);
+    for (int i = 0; i < 2 * n; i++) {
+        s64 v = pts[i];
+        trace_put((s32)(v < -(1 << 30) ? -(1 << 30) : v > (1 << 30) ? (1 << 30) : v));
+    }
+}
 
 /* --hr-check statistics of the current scenario */
 static struct {
@@ -75,6 +109,18 @@ void enh_r3d_viewport(u16 vp)
     h->line_o = (n - h->line_w) / 2;
     h->fine = enh.dither_fine;
     h->on = true;
+    last_seg = seg;
+    if (hr_tracing) {
+        s32 w[4] = { h->xmin, h->ymin, h->xmax, h->ymax };
+        hr_trace(0, 4, w);
+        if (win_x1 < win_x0) { win_x0 = w[0]; win_y0 = w[1]; win_x1 = w[2]; win_y1 = w[3]; }
+        else {
+            if (w[0] < win_x0) win_x0 = w[0];
+            if (w[1] < win_y0) win_y0 = w[1];
+            if (w[2] > win_x1) win_x1 = w[2];
+            if (w[3] > win_y1) win_y1 = w[3];
+        }
+    }
     hr_raster_begin();
     hr_clip_begin();
 }
@@ -118,6 +164,40 @@ void enh_hr_test_begin(void)
     enh_layers_reset();
     enh_hr.on = false;
     memset(&hs, 0, sizeof hs);
+    trace_n = 0;
+    hr_tracing = enh.hr_dump[0] != 0;
+    win_x0 = win_y0 = 0; win_x1 = win_y1 = -1;
+    last_seg = 0xA000;
+}
+
+/* DIR/<id>.hrd (int32 words unless noted): magic 'HRD1', n, fx, fy, lw, lh, fine, win x0 y0 x1 y1 (layer px, the union of the pass windows;
+ * x1 < x0 = no pass), trace length, the trace, then u16 layer rows of the window, u8 page[64000] (the last pass's page), u8 dac[768],
+ * u8 shadow3d[64000] (1 = the page pixel is a 3D write still on the page). Read by port/notes/e23/r3d_ref.py and dump_scenes.py. */
+static void write_dump(const char *id)
+{
+    if (!hr_tracing) return;
+    hr_tracing = false;
+    char path[2400];
+    snprintf(path, sizeof path, "%s/%s.hrd", enh.hr_dump, id);
+    FILE *f = fopen(path, "wb");
+    if (!f) return;
+    const u16 *layer = enh_layer3d();
+    bool have = layer && win_x1 >= win_x0 && win_x0 >= 0 && win_y0 >= 0 && win_x1 < enh_cv.lw && win_y1 < enh_cv.lh;
+    s32 hd[16] = { 0x31445248, enh_cv.n, enh_cv.fx, enh_cv.fy, enh_cv.lw, enh_cv.lh, enh.dither_fine, have ? win_x0 : 0, have ? win_y0 : 0,
+                   have ? win_x1 : -1, have ? win_y1 : -1, (s32)trace_n };
+    fwrite(hd, 4, 12, f);
+    fwrite(trace, 4, trace_n, f);
+    if (have)
+        for (int y = win_y0; y <= win_y1; y++) fwrite(layer + (size_t)y * enh_cv.lw + win_x0, 2, (size_t)(win_x1 - win_x0 + 1), f);
+    fwrite(seg_ptr(last_seg), 1, 64000, f);
+    u8 dac[768];
+    dac_get(0, 256, dac);
+    fwrite(dac, 1, 768, f);
+    static u8 sh[64000];
+    const u8 *pg = seg_ptr(last_seg);
+    for (int i = 0; i < 64000; i++) { u8 v; sh[i] = enh_shadow_3d((u16)i, &v) && pg[i] == v; }
+    fwrite(sh, 1, 64000, f);
+    fclose(f);
 }
 
 void enh_hr_test_end(const char *dir, const char *id)
@@ -127,6 +207,7 @@ void enh_hr_test_end(const char *dir, const char *id)
     if (enh_hr.on) pass_stats();
     enh_hr.on = false;
     enh_route = ENH_ROUTE_ART;
+    write_dump(id);
     char path[2300];
     snprintf(path, sizeof path, "%s/hr_check.txt", dir);
     FILE *f = fopen(path, first ? "w" : "a");

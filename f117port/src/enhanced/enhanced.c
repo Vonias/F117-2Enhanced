@@ -21,7 +21,7 @@ bool enh_canvas_on(void) { return !enh.classic && enh.canvas && !env_classic(); 
 int enh_parse_arg(int argc, char **argv, int i)
 {
     if (!strcmp(argv[i], "--classic")) {              /* every enhancement off, whatever else is on the command line */
-        enh.classic = true; enh.canvas = false; enh.wide = false; enh.render_scale = 0; enh.dither_fine = false; enh.hr_check = false;
+        enh.classic = true; enh.canvas = false; enh.wide = false; enh.render_scale = 0; enh.dither_fine = false; enh.hr_check = false; enh.hr_dump[0] = 0;
         return 1;
     }
     if (!strcmp(argv[i], "--render-scale") && i + 1 < argc) {
@@ -39,6 +39,10 @@ int enh_parse_arg(int argc, char **argv, int i)
         return 2;
     }
     if (!strcmp(argv[i], "--hr-check")) { if (!enh.classic) enh.hr_check = true; return 1; }
+    if (!strcmp(argv[i], "--hr-dump") && i + 1 < argc) {
+        if (!enh.classic) { snprintf(enh.hr_dump, sizeof enh.hr_dump, "%s", argv[i + 1]); enh.hr_check = true; }
+        return 2;
+    }
     return 0;
 }
 

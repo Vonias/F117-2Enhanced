@@ -190,6 +190,14 @@ if(Python3_Interpreter_FOUND)
              $<TARGET_FILE:f117> ${CMAKE_CURRENT_SOURCE_DIR}/../Game ${CMAKE_CURRENT_BINARY_DIR}/r3d_hr_n1 ${CMAKE_CURRENT_BINARY_DIR}/r3d_golden 1)
     add_test(NAME r3d_hr_n234 COMMAND Python3::Interpreter ${CMAKE_CURRENT_SOURCE_DIR}/../port/notes/e22/r3d_hr.py
              $<TARGET_FILE:f117> ${CMAKE_CURRENT_SOURCE_DIR}/../Game ${CMAKE_CURRENT_BINARY_DIR}/r3d_hr_n234 ${CMAKE_CURRENT_BINARY_DIR}/r3d_golden 2 3 4)
+    # ENH: S2.3, the independent reference rasteriser (port/notes/e23/r3d_ref.py) against the hr layer at N = 2 and 4, both dither modes, incl. the
+    # patched-table dither / stipple scenes; and the PNG / mask dump tool on one scene (the files go to work/e23 when run by hand).
+    add_test(NAME r3d_hr_ref COMMAND Python3::Interpreter ${CMAKE_CURRENT_SOURCE_DIR}/../port/notes/e23/r3d_ref.py
+             $<TARGET_FILE:f117> ${CMAKE_CURRENT_SOURCE_DIR}/../Game ${CMAKE_CURRENT_BINARY_DIR}/r3d_hr_ref ${CMAKE_CURRENT_BINARY_DIR}/r3d_golden 2 4)
+    add_test(NAME r3d_hr_dump COMMAND Python3::Interpreter ${CMAKE_CURRENT_SOURCE_DIR}/../port/notes/e23/dump_scenes.py
+             $<TARGET_FILE:f117> ${CMAKE_CURRENT_SOURCE_DIR}/../Game ${CMAKE_CURRENT_BINARY_DIR}/r3d_golden ${CMAKE_CURRENT_BINARY_DIR}/r3d_hr_dump --scenes dither_close0,runway0)
+    set_tests_properties(r3d_hr_ref PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 1800 DEPENDS render3d_golden PASS_REGULAR_EXPRESSION "r3d-ref OK")
+    set_tests_properties(r3d_hr_dump PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 600 DEPENDS render3d_golden PASS_REGULAR_EXPRESSION "dump-scenes: .*contact_selected.png")
     set_tests_properties(r3d_hr_n1 r3d_hr_n234 PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 1800 DEPENDS render3d_golden PASS_REGULAR_EXPRESSION "r3d-hr OK")
 endif()
 

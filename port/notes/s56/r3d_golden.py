@@ -30,6 +30,22 @@ def scene(yaw, pitch, roll, x, y, z, h=0x5B):
                                                                           z & 0xFFFF, (z >> 16) & 0xFFFF, h)
 
 
+def patched_table(raw, mode):
+    """S2.3: the original's colour tables hold no two-colour (dither) or FCh (stipple) word, so these scenes patch the active table (both the
+    detail-3 and the low-detail one) on BOTH sides: mode 'dither' gives every odd solid colour byte a second colour (lo ^ 8), 'stipple' makes
+    every third colour byte a 50 % stipple of its colour (hi = FCh) over what is behind it."""
+    w = list(struct.unpack('<256H', raw))
+    for i, v in enumerate(w):
+        lo, hi = v & 0xFF, v >> 8
+        if hi != 0xFF or lo == 0 or lo >= 0xF0:
+            continue
+        if mode == 'dither' and i % 2 == 1:
+            w[i] = lo | ((lo ^ 8) << 8)
+        elif mode == 'stipple' and i % 3 == 0:
+            w[i] = lo | 0xFC00
+    return struct.pack('<256H', *w).hex()
+
+
 def scenarios(T, st):
     """st: values read from s1. Scene list (camera = x32 east, y32 as C02A (north-inverted), altitude)."""
     base = ['poke b 0x262A 0']
@@ -48,6 +64,16 @@ def scenarios(T, st):
     # (c) high
     for k in range(3):
         T.add('high%d' % k, 's1', base + [scene(0x3000 + 0x5000 * k, -0x1800, 0x400 * k, px + 0x8000 * k, py, 8000 + 6000 * k)])
+    # (c2) S2.3: two-colour (dither, hi < FBh) and stipple (FCh) faces, which the shipped colour tables never use: patched tables on both sides
+    for mode in ('dither', 'stipple'):
+        tabs = ['pokes 0x7F60 %s' % patched_table(st['ct7F60'], mode), 'pokes 0x8360 %s' % patched_table(st['ct8360'], mode)]
+        for n, i in enumerate(sites[:3]):
+            sx, sy = i[0] << 5, 0x100000 - (i[1] << 5)
+            T.add('%s_target%d' % (mode, n), 's1', base + tabs + [scene(0, -0x300, 0, sx, sy + 0x900, 150)])
+            T.add('%s_close%d' % (mode, n), 's1', base + tabs + [scene(0x0800, -0x900, 0x1400, sx - 0x60, sy + 0x140, 40)])
+        T.add('%s_runway' % mode, 's1', base + tabs + [scene(0, 0, 0, px, py, 0x18)])
+        T.add('%s_low' % mode, 's1', base + tabs + ['poke w 0x98DE 3', scene(0x1000, -0x600, 0, px, py, 300)])
+        T.add('%s_frame' % mode, 's1', base + tabs + ['call view_frame'])
     # (d) looking at targets (sites), (e) a polygon crossing the screen edge / very close, (f) up against the models
     for n, i in enumerate(sites[:10]):
         sx, sy = i[0] << 5, 0x100000 - (i[1] << 5)
@@ -121,7 +147,7 @@ def main():
     sim_ref.write_snapshot(m, work, 's1')
     T.snaps['s1'] = m.snapshot()
     rd = lambda o, f='<h', n=2: struct.unpack(f, m.dg(o, n))[0]
-    st = {'BA10': rd(0xBA10, '<i', 4), 'C02A': rd(0xC02A, '<i', 4), 'C0A4': rd(0xC0A4, '<H'), 'C0B2': rd(0xC0B2, '<H'), 'sites': [], 'units': []}
+    st = {'ct7F60': bytes(m.dg(0x7F60, 512)), 'ct8360': bytes(m.dg(0x8360, 512)), 'BA10': rd(0xBA10, '<i', 4), 'C02A': rd(0xC02A, '<i', 4), 'C0A4': rd(0xC0A4, '<H'), 'C0B2': rd(0xC0B2, '<H'), 'sites': [], 'units': []}
     for i in range(rd(0xC0B4)):
         s = 0xB2A4 + 16 * i
         x, y, shape = rd(s, '<H'), rd(s + 2, '<H'), rd(s + 14, '<H')

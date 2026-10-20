@@ -87,6 +87,7 @@ static inline bool row_ok(s32 r) { return r >= 0 && r < tab_rows; }
 
 void hr_edge_dda(const HrEdge *e)
 {
+    if (hr_tracing) { s32 a[4] = { e->x0, e->y0, e->x1, e->y1 }; hr_trace(1, 4, a); }
     s32 ax = e->x0, dx = e->x1, bx = e->y0, sv = e->y1, t;
     if (ax > dx) { t = ax; ax = dx; dx = t; t = sv; sv = bx; bx = t; }
     s32 di = bx;
@@ -145,6 +146,7 @@ void hr_edge_dda(const HrEdge *e)
 
 void hr_wall_fill(s32 a, s32 b, s32 x)
 {
+    if (hr_tracing) { s32 t[3] = { a, b, x }; hr_trace(2, 3, t); }
     s32 bx = a, cx = b;
     if (cx < bx) { s32 t = bx; bx = cx; cx = t; }
     if (cx <= enh_hr.ymin || bx >= enh_hr.ymax) return;
@@ -189,6 +191,7 @@ static bool spans_next(Spans *s, s32 *row, s32 *l, s32 *r)
 
 void hr_fill(u16 colour)
 {
+    if (hr_tracing) { s32 t = colour; hr_trace(3, 1, &t); }
     u8 al = (u8)colour, ah = (u8)(colour >> 8);
     Spans sp;
     s32 y, l, r;
@@ -232,6 +235,7 @@ static void brush(s32 x, s32 y, u8 c)
 
 void hr_draw_line(s32 bx, s32 di, s32 bp, s32 cx, u8 c)
 {
+    if (hr_tracing) { s32 t[7] = { bx, di, bp, cx, c, enh_hr.line_w, enh_hr.line_o }; hr_trace(4, 7, t); }
     s32 ady = cx - di, adx = bp - bx, t;
     if (ady < 0) ady = -ady;
     if (adx < 0) adx = -adx;

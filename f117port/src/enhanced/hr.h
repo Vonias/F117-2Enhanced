@@ -73,6 +73,14 @@ extern s32 hr_miny;
 static inline s64 hr_keepwrap(s64 exact1, s64 hr, int n) { return exact1 == (s16)exact1 ? hr : (s64)n * (s16)exact1; }
 static inline bool hr_fits16(s64 v, int n) { return v >= -32768LL * n && v <= 32767LL * n; }
 
+/* ---- --hr-dump (S2.3): the primitives the hr back end rasterised, as int32 words, for the independent reference (port/notes/e23/r3d_ref.py).
+ * 0 B xmin ymin xmax ymax (a pass opens; layer px)   1 E x0 y0 x1 y1 (a clipped edge entering the DDA)   2 W a b x (a wall)
+ * 3 F colour (the polygon of the E / W since the last F is filled)   4 L x0 y0 x1 y1 colour w o (a line, brush w at offset o)
+ * 5 Q ox oy colour n x y ... (a 1001 polygon, points relative to the window origin)   6 H (hz_draw fills a half plane: not modelled) */
+extern bool hr_tracing;
+void hr_trace(int type, int nargs, const s32 *a);
+void hr_trace_poly(s32 ox, s32 oy, u8 colour, int n, const s64 *pts);
+
 /* ---- --hr-check (the render test): per scenario statistics of the hr layer against the 1x page */
 void enh_hr_test_begin(void);                      /* simtest "scn": canvas on at --render-scale, layers and shadow cleared */
 void enh_hr_test_end(const char *dir, const char *id);   /* simtest "end": one line into DIR/hr_check.txt */

@@ -12,6 +12,7 @@ typedef struct {
     bool compose_test;   /* --compose-test: headless check of the canvas geometry and the compositor */
     bool dither_fine;    /* --dither fine: the 3D checkerboard per layer pixel; --dither grid (default): per original pixel (DESIGN 2.4, Q2) */
     bool hr_check;       /* --hr-check: the render test (--render-test) also checks the hr 3D layer against the 1x page (DIR/hr_check.txt) */
+    char hr_dump[1024];  /* --hr-dump DIR (implies --hr-check): per render-test scenario DIR/<id>.hrd: the hr trace, the layer, the page (S2.3) */
 } EnhOptions;
 
 extern EnhOptions enh;

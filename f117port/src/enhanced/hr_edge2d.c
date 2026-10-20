@@ -230,6 +230,7 @@ static void fill(u8 c)
 
 static void poly_fill_hr(int n, const s64 *pts, u8 colour)
 {
+    if (hr_tracing) hr_trace_poly(enh_hr.ox, enh_hr.oy, colour, n, pts);
     e2_tables_clear();
     sg.x1 = pts[0]; sg.y1 = pts[1];
     for (int k = 1; k < n; k++) {
@@ -298,6 +299,7 @@ static u16 hz_rnd(u32 v) { return (u16)((v >> 16) + ((v >> 15) & 1)); }
 
 static void hz_draw_hr(void)
 {
+    if (hr_tracing) hr_trace(6, 0, NULL);
     u16 nsC = (u16)-DSW(0x498A);
     s16 sB = (s16)DSW(0x4986), cB = (s16)DSW(0x4988), cC = (s16)DSW(0x498C);
     u16 H;
