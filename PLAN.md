@@ -22,7 +22,6 @@ remove it when it is done.
 
 | Task | What to do | For | Time |
 |---|---|---|---|
-| U1 (S3.1) | Fly with `& "C:\Coding\F117-2Enhanced\f117port\build\f117-enhanced.exe" --game-dir "C:\Coding\F117-2\Game" --render-scale 4` (PowerShell) and go through every view: cockpit, outside, chase, left / right / rear, own aircraft. Check that smoke, explosions, tracers and target boxes are sharp and in place, and that the cockpit art is unchanged; compare with `--classic`. Reference pictures (classic vs hr, N=4, flight palette): `C:\Coding\F117-2Enhanced\work\e31\contact_views.png` (single scenes: `view_<mode>_classic.png` / `_hr.png` beside it). | S3.1 | 15 min |
 
 ## Status
 
@@ -114,7 +113,7 @@ Notes:
 ### Phase 3 — Visible features (resolution)
 | Id | Task | Model | Size | Status |
 |---|---|---|---|---|
-| S3.1 | The main 3D view at N× in all view modes: routing 3D vs HUD (9ACA, A17E), sprites, dots and tracers at N× positions, keyed frames through the compositor (DESIGN 2.5, 2.6) | S | M done 2026-10-20 · U1 pending |
+| S3.1 | The main 3D view at N× in all view modes: routing 3D vs HUD (9ACA, A17E), sprites, dots and tracers at N× positions, keyed frames through the compositor (DESIGN 2.5, 2.6) | S | M done 2026-10-20 · U1 OK 2026-10-20 |
 | S3.2 | The TV/sensor camera window and the map MFD terrain at N× (verify the viewport hook covers bf71 and 119C, ortho mode) | S | S | |
 | S3.3 | HUD and MFD vector graphics at N× (pitch ladder, tapes' lines, reticle, ILS, ADI, map lines and blips) in the vector layer; fonts and bitmaps stay the original pixels | S | M | |
 | S3.4 | Wider view: per-view canvas geometry, widened culling, B85D range and terrain cells in display passes (needs S2.4); left/right/rear as a whole picture; `--classic` = 320x200 (DESIGN 3) | O | M | |
