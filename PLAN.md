@@ -22,7 +22,6 @@ remove it when it is done.
 
 | Task | What to do | For | Time |
 |---|---|---|---|
-| U1 (S2.2) | In PowerShell run `& "C:\Coding\F117-2Enhanced\f117port\build\f117-enhanced.exe" --game-dir C:\Coding\F117-2\Game --render-scale 4` and fly a mission (front cockpit, a look left / right / rear, the TV camera). The 3D world (terrain, objects, sky and ground bands) should be sharp, while the cockpit art, HUD, text and panel look exactly as before. Compare with the same command plus `--classic`. Also try `--dither fine` (no decision yet: S2.3 shows both side by side). Tell us anything broken: wrong colours, holes, flicker, art covered by 3D. | S2.2 | 15 min |
 
 ## Status
 
@@ -74,7 +73,7 @@ picture scaled up to fill; full-screen 3D, outside and map: extended), per Decis
 | Id | Task | Model | Size | Status |
 |---|---|---|---|---|
 | S2.1 | Host: canvas separate from 320x200 (any aspect, `--render-scale N`, `--wide`), the compositor (3D layer + vector layer + shadow plane, live DAC/CRTC) and the shadow records in `mgraphic.c`; `--classic` = today's present path (DESIGN 2.1, 2.5, 3.1) | S | M  done 2026-10-19 · U1 OK 2026-10-19 |
-| S2.2 | render3d at N×: the hr back end (`hr_clip/hr_raster/hr_edge2d` copies) fed by hooks in projection, edges, clipper, spans, sky and 1001; rule R1; N=1 byte-identical (DESIGN 2.2–2.4) | O | L | done 2026-10-19 · U1 pending |
+| S2.2 | render3d at N×: the hr back end (`hr_clip/hr_raster/hr_edge2d` copies) fed by hooks in projection, edges, clipper, spans, sky and 1001; rule R1; N=1 byte-identical (DESIGN 2.2–2.4) | O | L | done 2026-10-19 · U1 OK 2026-10-20 |
 | S2.3 | Tests: the faithful suite in `--classic`; golden scenes at N=1 through the hr path; reference-rasteriser comparison at N=2/4; headless PNG and mask dumps for the user (DESIGN 5.3) | S | M | |
 | S2.4 | Sandboxed display pass: snapshot/restore of mem, VGA model, driver statics and layers; sound/wait suppression; `enh_frame_begin`/`enh_idle` hooks; the sandbox hash ctest (DESIGN 4.2) | O | M | |
 
