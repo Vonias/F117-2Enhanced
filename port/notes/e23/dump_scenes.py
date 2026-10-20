@@ -19,6 +19,7 @@ S3.1: `--views` dumps the whole composed frame of the view_* scenes (every view 
   <scene>_classic.png   the faithful 320x200 page scaled N x N nearest (the same scene run with the DAC of the flight palette)
   <scene>_hr.png        what the compositor shows with the 3D layer, the vector layer and the shadow plane (<id>.cmp of the port, hr_pass.c frame_check)
   contact_views.png     classic | hr for every view mode
+S3.2: `--tvmap` cuts the TV camera and map MFD windows out of the frame (the tv* / map* scenes, N x): <scene>_classic.png, <scene>_hr.png and contact_tv_map.png.
 The scenes run with `call pal_flight_load` first (the mission's flight palette as the game loads it; the golden scenes keep the start-up palette, S2.3 note).
 """
 import os, shutil, subprocess, sys
@@ -139,6 +140,49 @@ def main_views(exe, game, gwork, out, n, scenes):
     return 0
 
 
+TVMAP_SCENES = ['tvclose0', 'tvfire0', 'tvflir0', 'tvsmoke0', 'tvsimple_flir0', 'tvfire1', 'tvflir1', 'tvsmoke1', 'tvclose2',
+                'map2', 'map4', 'map6', 'map9', 'mapbg6']
+
+
+def main_tvmap(exe, game, gwork, out, n, scenes):
+    """S3.2: the TV camera window (right MFD sensor page, x 169..245, y 110..169) and the map MFD window (left MFD, x 74..150, y 110..169) of the tv* / map* scenes:
+    <scene>_classic.png / <scene>_hr.png are the window cut out of the frame at N x (the classic 1x page scaled N x N, and what the compositor shows with the 3D layer);
+    contact_tv_map.png has both side by side at twice that size for every scene."""
+    scenes = scenes or TVMAP_SCENES
+    wd = run_views(exe, game, gwork, out, n, scenes)
+    rows, bad = [], 0
+    for sc in scenes:
+        pc, ph = os.path.join(wd, sc + '.cmp'), os.path.join(wd, sc + '.hrd')
+        if not os.path.exists(pc):
+            print('dump-scenes: scene %s is not in scn.txt' % sc)
+            continue
+        idx, pal = read_cmp(pc)
+        page = Hrd(ph).page
+        x0, y0, w, h = (74, 110, 77, 60) if sc.startswith('map') else (169, 110, 77, 61)
+        classic = pal[np.repeat(np.repeat(page, n, 0), n, 1)][y0 * n:(y0 + h) * n, x0 * n:(x0 + w) * n]
+        hr = pal[idx][y0 * n:(y0 + h) * n, x0 * n:(x0 + w) * n]
+        Image.fromarray(classic).save(os.path.join(out, sc + '_classic.png'))
+        Image.fromarray(hr).save(os.path.join(out, sc + '_hr.png'))
+        hh, ww = hr.shape[:2]                      # a window drawn at N x has blocks of N x N layer pixels that are not one colour (and differs from the scaled 1x page)
+        blk = hr.reshape(hh // n, n, ww // n, n, 3).transpose(0, 2, 1, 3, 4).reshape(hh // n, ww // n, n * n, 3)
+        if n > 1 and not (blk != blk[:, :, :1]).any() and not sc.startswith('tvsimple'):
+            print('dump-scenes: %s: the window shows no N x detail' % sc)
+            bad += 1
+        z = 2
+        rows.append([labelled(Image.fromarray(v).resize((v.shape[1] * z, v.shape[0] * z), Image.NEAREST), '%s  %s  (x%d, shown x%d)' % (sc, k, n, z)) for k, v in (('classic', classic), ('hr', hr))])
+    if rows:
+        cols = 2
+        cw, ch = max(c.width for r in rows for c in r), max(c.height for r in rows for c in r)
+        sheet = Image.new('RGB', (cols * cw, len(rows) * ch), (20, 20, 24))
+        for i, r in enumerate(rows):
+            for j, c in enumerate(r):
+                sheet.paste(c, (j * cw, i * ch))
+        sheet.save(os.path.join(out, 'contact_tv_map.png'))
+        print('dump-scenes: %s (%d scenes)' % (os.path.join(out, 'contact_tv_map.png'), len(rows)))
+    shutil.rmtree(wd, ignore_errors=True)
+    return 1 if bad or not rows else 0
+
+
 def labelled(img, text, h=22):
     im = Image.new('RGB', (img.width, img.height + h), (20, 20, 24))
     ImageDraw.Draw(im).text((6, 2), text, fill=(235, 235, 235), font=font(15))
@@ -168,6 +212,9 @@ def main():
     views = '--views' in argv
     if views:
         argv.remove('--views')
+    tvmap = '--tvmap' in argv
+    if tvmap:
+        argv.remove('--tvmap')
     if '--scenes' in argv:
         i = argv.index('--scenes'); scenes = argv[i + 1].split(','); del argv[i:i + 2]
     if len(argv) < 3:
@@ -181,6 +228,8 @@ def main():
     os.makedirs(out, exist_ok=True)
     if views:
         return main_views(exe, game, gwork, out, n, scenes)
+    if tvmap:
+        return main_tvmap(exe, game, gwork, out, n, scenes)
     groups = [('contact_dither.png', DITHER_SCENES), ('contact_scenes.png', OTHER_SCENES)]
     if scenes:
         groups = [('contact_selected.png', scenes)]

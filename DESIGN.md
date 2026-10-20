@@ -152,8 +152,8 @@ HUD line endpoints are integers computed at 1× (centre of the 1× pixel → lay
   touching the layer (the hr polygon follows); any other 1× write inside a 3D pass (sprites, dots, the 1× backdrop) **stamps** its N×N block
   with the 1× value (bit 9), so it shows as the original pixel until an hr write replaces it. A write to the other page during a pass (the
   TV camera's backdrop lands on MGRAPHIC's current page) does not stamp; the hr backdrop is drawn only when that page is the pass page.
-* Not yet (later subtasks): sprites at sub-pixel positions (stamped at their 1× place; S3.1 uses `enh_hr_pt` of B85D), the TV camera's
-  second `begin_scene` in the same window clears the first pass's layer (S3.2), the wide view (S3.4).
+* Not yet (later subtasks): sprites at sub-pixel positions (stamped at their 1× place; S3.1 uses `enh_hr_pt` of B85D), the wide view (S3.4). (The TV camera's
+  second `begin_scene` in the same window cleared the first pass's layer: fixed in S3.2, 2.9.)
 * Test `--hr-check` (`port/notes/e22/r3d_hr.py`, ctests `r3d_hr_n1`, `r3d_hr_n234`): the 110 golden scenes with the enhancements on stay
   byte for byte; N = 1: layer == page for all 2.51 M checked 3D pixels (99.1 % drawn by the hr back end, the rest stamped); N = 2 / 3 / 4:
   95.7 / 94.3 / 94.0 % of layer pixels agree with their 1× pixel, 99.98 / 99.96 / 99.94 % away from edges (tolerance 90 % and 99.5 %).
@@ -179,9 +179,30 @@ HUD line endpoints are integers computed at 1× (centre of the 1× pixel → lay
 * Views: every mode goes through `r3d_scene_draw` (so one pass, 2.7) and `view_frame`'s keyed blits / strips over the window are page writes that the shadow marks as art
   (rows 91..106 strip, the corners, 256REAR / LEFT / RIGHT, the nose triangle), so the 3D layer shows through exactly the key-0 pixels. Checked on all of them at N = 1
   (the composed frame equals the page for the 13 view scenes) and at N = 2..4 (art blocks unchanged, interior blocks agree).
-* Not yet: the sprites of the TV camera window (`r3d_sprite_tv`, the fire / smoke objects ids >= 25h) keep their stamped 1x pixels (S3.2); the HUD lines (S3.3).
+* Not yet: the HUD lines (S3.3). The TV camera sprites were done in S3.2 (2.9).
 * Tests: `--hr-check` now also composes the frame (`fpx fdiffer finner finner_differ`, vector footprints `vtot vhit`, object counts) and `--hr-dump` writes `<id>.cmp` (the
   composed canvas) and the vector layer; trace types 7 (sprite + source bitmap), 8 (dot), 9 (clipped vector line) let `r3d_ref.py` judge them with its independent rule.
+
+### 2.9 As built (S3.2): the TV camera window and the map MFD window
+* The viewport hook (`r3d_set_viewport`, 2.7) already opens the right N x rectangle for these windows (TV x 169..245, y 110..169 of the page `[4088]`; map x 74..150,
+  y 110..169): window = `DS:85CA..85D0`, centre `85D2/85D4`, layer origin `fx + N x0`; the DB71 pixel offset is the frame-pixel window, so nothing to add. Ortho (`[7D5E]`)
+  was R1 from S2.2. Measured: the TV and map scenes (35 of the 164 golden scenes) are judged by the reference rasteriser with gap 0, wrong 0, stray 0 at N = 2 and 4.
+* Two passes in one window (`mfd_view_render`, close view of an air target: terrain, then the object): `enh_pass_continue` (called before the second `begin_scene`) makes the
+  next `enh_r3d_viewport` keep the shadow and layers if the window and page are the same; trace type 0 carries the flag (`keep`) for the reference.
+* The 1x backdrop of the sensor window (fill, sky / ground bands: axis-aligned rows, so their N x look is the 1x one) is drawn before the first pass opens: `enh_tv_backdrop`
+  (called at the top of the backdrop in `mfd_view_render`) clears the window, sets route 3D and arms the keep flag, so those writes are stamped 3D pixels and the pass'
+  polygons are not cut to the 1x footprint (the shadow's "3D" rule shows layer pixels only in blocks whose 1x pixel is a 3D write).
+* TV sprites (fire puffs 24h..27h, the smoke column 25h; `r3d_draw_queued` -> `r3d_sprite_tv`): `enh_tv_sprite_pending(e, size)` takes the first end of the last edge's hr
+  record (`hr_edge_point`) as the sprite centre and N x the 1x `size`; the S3.1 sprite path draws it into the 3D layer (`enh_sprite_begin` accepts the TV context).
+* FLIR tint (`mfd_view_flir_tint`, poly_fill mode 3: `((c & 0Eh) >> 1) | 98h` on the page): the poly_fill hook `enh_rec_remap` runs the same function over the N x N layer block
+  of every pixel whose record is a fresh 3D write and keeps the record 3D; other pixels are recorded as art as before. The reference applies the ramp to its expected colours
+  (trace type 10 = the tinted rectangle).
+* Map MFD: the finished window is saved to the backup page 2 (`mfd_map_save_bg`) and copied back every frame (`mfd_map_restore_bg`) to erase the aircraft marker. The blit is a
+  plain page write, so `enh_window_save` / `enh_window_restore` (one slot, not in display passes) keep the window's records and layers beside the backup. The map's route lines,
+  symbols and text are art or 1x vector writes (S3.3 turns the lines into vector-layer lines).
+* Tests: golden scenes `tvclose / tvfire / tvflir / tvsmoke / tvsimple_flir` x 3 sites (two passes, fire puffs with live puff state, smoke column, FLIR, one-pass simple path),
+  `mapfp3/6/9` (flight palette), `mapbg3/6/9` (save, a line over the window, restore); all with `pal_flight_load` and `[4088] = 1` (the TV pass page is MGRAPHIC's draw page, as in the game).
+  `--hr-check` prints `wpx w3d tpx tramp` (the window still shown from the 3D layer; the tinted window in the green ramp); `r3d_hr.py` asserts them.
 
 ## 3 (b) The wider view
 
@@ -341,7 +362,8 @@ inputs) run only from `host_pump` in real time, never in a display pass: sound t
 | `r3d_project_point` | `sim/sim_objovl.c` | hr sx/sy (+ invalid on early return); extended range when wide and route 3D | S2.2, S3.1, S3.4 |
 | `r3d_draw_world_objects` (B billboards, D/E dots), `obj_overlay_frame` (S2 tracers, S3 explosion), `hud_target_box`, `hud_draw_diamond` | `render3d/r3d_world.c`, `sim/sim_objovl.c` | `enh_bill_size`, `enh_dot_begin/end`, `enh_tracer_*`, `enh_expl_pending`, `enh_box_*` (2.8) | S3.1 |
 | `sprite`, `r3d_queue_billboard`, `r3d_draw_queued` | `render3d/r3d_scene.c` | `enh_sprite_begin/end`, `enh_bill_note`, `enh_bill_pending` (2.8) | S3.1 |
-| `mfd_view_render`, `map_render_terrain` | `sim/sim_mfdview.c`, `render3d/r3d_terrain.c` | none expected (DB71 hook covers them); verify | S3.2 |
+| `mfd_view_render`, `map_render_terrain` | `sim/sim_mfdview.c`, `render3d/r3d_terrain.c` | the DB71 hook covers them; `enh_tv_backdrop`, `enh_pass_continue`, `enh_tint_note` in `mfd_view_render` (2.9) | S3.2 |
+| `r3d_draw_queued` (TV sprite), `poly_fill` mode 3, `mfd_map_save_bg` / `mfd_map_restore_bg` | `render3d/r3d_scene.c`, `video/mgraphic.c`, `sim/sim_mfd.c` | `enh_tv_sprite_pending`, `enh_rec_remap`, `enh_window_save/restore` (2.9) | S3.2 |
 | `r3d_cull_core`, `r3d_frustum_test` | `r3d_scene.c`, `r3d_object.c` | widen by kx/ky in wide display passes | S3.4 |
 | `r3d_draw_terrain` | `render3d/r3d_terrain.c` | wide cell table in wide display passes | S3.4 |
 | `frame_loop_body` | `sim/sim_main.c` | `enh_frame_begin()` before `view_frame` | S2.4 |
