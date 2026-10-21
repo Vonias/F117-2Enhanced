@@ -260,9 +260,17 @@ Extensions in original pixels: `El = fx/N`, `Er = (Lw - fx - 320N)/N`, `Et = fy/
 | 0 front cockpit | x 0..Lw-1, y 0..Lh-1 (frame panel rows covered by art via compose) | `fx+159N, fy+52N` (60 with `[294B]`) | the world left, right, above and beside the panel (Q4) |
 | 0x44, 0x84..0x8C (full-screen 3D, outside) | whole canvas | `fx+159N, fy+100N` | the world |
 | 0x41..0x43 rear/left/right | frame only | frame-mapped | black: the whole 320x200 picture (3D at N×, art NxN) as large as fits, centred (Q1) |
-| second cockpit view (window frame up top) | frame only | frame-mapped | not extended (no art for the frame above): the whole picture scaled up, fit height, centred, as 0x41..0x43 (Decisions 2026-10-21) |
+| second cockpit view (window frame up top) = **view 0 with `[294B]` = 1** (identified in S3.4, below) | frame only | frame-mapped | not extended (no art for the frame above): the whole picture scaled up, fit height, centred, as 0x41..0x43 (Decisions 2026-10-21) |
 | TV, map MFD | their frame rect at N× | frame-mapped | not extended (panel) |
 | SETUP/shell/START/END/debrief, VGAME menus | — | — | 320x200 (or 640x400 text) scaled by the largest whole N, centred, black bars |
+
+**The second cockpit view (S3.4).** VGAME has two cockpit views of `[C07A]` = 0, switched with the key `c` (`1e9e`: `[294B] = ([294B] == 0)`, simflow.md 2.1;
+reset to 0 at mission start by `39c4`): `[294B]` = 0 is the first (wide HUD, instrument panel at the bottom, the 3D window rows 0..90 with only the HUD over it),
+`[294B]` = 1 the second, the "small view": half-scale projection (B85D and 1442 halve X / Y, `[85D4]` = 60), the compact HUD, and `hud_side_strips` (d9a3, simflow.md
+section 4, port `sim_hud.c`) `cockpit_keyblit`s two 54 x 91 frames from the top of 256PIT.PIC (picture x 141 and 196, rows 0..90) onto screen x 33..86 and 233..286,
+rows 0..90: the window-frame struts, which run up to row 0 of the frame and have no art above it. No other view mode has a second cockpit variant (`[2DFC]`, Alt-C,
+only makes the window 107 rows tall with keyed panel corners at the bottom; 0x41..0x43 are the looking-out views). Measured in the real path
+(`port/notes/e34/wide_realpath.py`, 16:9): the second cockpit view shows 32.5 % art in the canvas against 28.6 % in the first (the struts); it is placed FIT.
 
 ### 3.3 Field of view, culling and clip edges (display passes only; canonical pass stays faithful)
 The scale stays 256N px per unit tangent in x and 192N in y (128N/96N with `[294B]`), so angular size is unchanged and the
@@ -281,6 +289,50 @@ original's except where newly drawn side cells/objects overlap into it (more cor
 ### 3.4 HUD anchor
 The HUD, MFDs, panel and messages stay in frame coordinates (1× drawing), so they sit with the cockpit at bottom centre.
 The HUD symbology lines up with the world because the projection centre and scale inside the frame are the original ones.
+
+### 3.5 As built (S3.4): choices where 3.1-3.4 were silent
+* **How the extension stays out of the sim.** The canonical frame runs exactly as before (its main pass is not widened). When the view is extended and the canvas is
+  larger than the frame (`enh_wide_due`, decided at `enh_frame_begin` from `[C07A]` / `[294B]` and the canvas), A_k is taken and `enh_idle` runs **one wide display
+  pass** (`enh_display_pass(0)` with `enh_wide_pass`): the same frame from A_k, with the main 3D pass widened (`enhanced/wide.c`). After its flip the pass's 3D layer
+  (whole canvas) and vector layer are copied out (`enh_wide_capture`, pending) and the live state is restored as in S2.4; the canonical flip makes the pending
+  picture current (`held_promote`). The compositor (`compose_src_live`) takes the **3D layer of the wide picture inside the frame's 3D window and everywhere
+  outside the frame**, its vector layer outside the frame (tracers), and everything else (page, shadow records, the HUD's vector layer, the MFD windows below the 3D
+  window) from the live frame, so HUD, panel and MFDs are the canonical frame's. The wide picture is used only while its geometry equals the live canvas and no menu
+  is up. A frame that changes the view (`[2E48]` != `[C07A]`: `view_frame` would read the cockpit picture, a file access refused in a pass) gets no pass: that one
+  frame shows the canonical picture (black outside). This is 4.1's "`--interp off`: one display pass with alpha = 1 per step"; S4.1 runs it at every refresh.
+* **The main pass** is the pass whose window starts at x 0, y 0 and ends at x 319 (view_frame's 3D window; the TV and map windows are smaller). Wide: the hr clip and
+  1001 windows are the canvas (`HrCtx.wide`; `wx, wy` keep the original window's layer origin for the R1 "fits s16" tests and the sprite placement; `e2dx, e2dy` move
+  the 1001 window-relative points of the bands / horizon into the canvas window; the horizon line of hz_draw is at least the canvas half diagonal long; the slot-37
+  single-pixel quirk is applied at the canvas edge). The frame below the 3D window (the panel and its MFD windows) is a **hole** that is never written (`HR_IN_HOLE` in
+  `hr_put` / `put3d`, trace type 14), so the TV / map windows keep their layers. The layers outside the frame are cleared when the wide pass opens.
+* **Widening factors** (`enh_wide_begin`, from the canvas and the projection centre, in 1x px): mx = the larger extension left / right of the centre, my = up / down.
+  E8B5: `kx = max(1, mx / 160)`, `ky = max(1, my / [0D20])` (Q8, on the wrapped s16 tolerances, both branches of `[4360]`); 02B6: the bounds times
+  `max(1, mx / 256)` and `max(1, my / 192)` (the 45-degree pyramid only grows past tangent 1); B85D (`enh_wide_pt`: the main pass, and A17E S2 tracers / S3 explosion
+  right after it, `enh_wide_ovl`; never the S1 / S4 boxes, the HUD symbology): `|X| <= -Z max(1, mx / 256)`, sx in `[-ceil(fx / N), 319 + ceil(right / N)]`,
+  sy in `[-ceil(fy / N), (lh - fy) / N - 1]` (the front view's objects beside the panel count), `sx = -1 -> -2`. The 1x sprites / lines of an out-of-frame point
+  are clipped by their own windows (`sprite_scaled`, `hud_line_view`), so only the hr emitters draw them; tracers in a wide pass are clipped to the canvas.
+* **Terrain cells** (04DA, `enh_wide_cell`): built at run time from the image's own tables (`DS:034C`, `04CC/04DE`), so no generated header: per octant the original
+  cells in their order (path B 9, path A the 15 with the quirky overread tail) plus the cells of the 5 x 5 block with `dot(cell, octant direction) >= 0` they do not
+  visit, each put before the first original cell that is not farther (far -> near, outer first; the camera cell and path A's tail stay last). New far cells (dot >=
+  that of the original's first four) count as "i < 4" for the low-detail skip. The down-look table becomes the full 5 x 5 (the 16 ring cells first) when the pitch
+  is below 60 degrees down **or** the lower edge of the extended view looks past the vertical (`pitch < -(90 deg - atan(down / 192))`).
+* **Placement.** `enh_view_class(C07A, [294B])`: view 0 with `[294B]` = 0 FRONT, with `[294B]` = 1 FIT (the second cockpit view), 0x41..0x43 FIT, the rest FULL.
+  `--render-scale N` is kept also with wide when it is larger than the window holds (S2.1 lowered it to the fit): the canvas then holds at least the frame and the
+  host scales it down, as without wide (so the headless tests keep their N). VGAME's own screens (the quit requester Alt-Q, the boss screen Alt-B) set the menu
+  placement while they are up (`enh_menu`, hooks in `sim_input.c`): pillarboxed, no extended world. Pause (Alt-P) keeps the frozen extended frame.
+* **`--wide` default: on** (S2.1's note "the default turns on with S3.4"; CLAUDE.md "enhanced defaults are on"); `--no-wide` and `--classic` turn it off; the launcher
+  switch is S5.1's. With a 4:3 window (4:3 pixel aspect) the canvas is the frame and nothing changes.
+* **HUD anchor (3.4)** needed no code: the HUD, panel and MFDs are drawn in frame coordinates by the canonical frame and composed from it; the projection centre and
+  scale inside the frame are the original ones, so the HUD lines up with the extended world.
+* **Test aids**: `--wide-test WxH` (the render test draws each scene's main pass wide on a W x H canvas placed for the scene's view; `enh_canvas_test_window` keeps
+  the host's window from moving the canvas mid-scene), `--wide-geometry-test`, `F117_WINDOW=WxH` (the window a headless run pretends to have); `--mfd-probe` prints
+  per flip the presented canvas by class (world / art / vector / black, outside the frame, seams).
+* **Measured** (2026-10-21): sandbox hash with `--wide` (canvas 1280 x 600): 212 VGAME frames identical to the plain run in everything but the canvas, 211 wide passes,
+  0 forbidden calls. Real path (16:9 canvas 1920 x 900 and 21:9 2560 x 900, N = 4): outside the frame 100 % world in the first cockpit view and all outside views,
+  100 % black in the second cockpit view and left / right / rear; seams at the border 0-0.17 % of world pixel pairs (inside the frame 0.08-2.95 %); 331 wide passes in
+  461 frames (the FIT views have none), 0 forbidden calls; a pass costs ~17 ms at 1920 x 900. Wide golden scenes (N = 2, 960 x 480 and 1280 x 480, 115 scenes with a
+  wide pass): reference gap 0 / 0.0001 %, wrong 0.003 %, stray 0; unwritten extended pixels 0 / 49 (a sky-band edge sliver at the far right of the 21:9 canvas in two
+  steep-roll / high scenes); nothing in the hole; inside the frame 99.6-99.7 % equal to the frame-only render; seams 0.96-0.99 % against 1.24-1.30 % inside.
 
 ## 4 (c) Frame rate
 
@@ -407,8 +459,10 @@ inputs) run only from `host_pump` in real time, never in a display pass: sound t
 | `mfd_view_render`, `map_render_terrain` | `sim/sim_mfdview.c`, `render3d/r3d_terrain.c` | the DB71 hook covers them; `enh_tv_backdrop`, `enh_pass_continue`, `enh_tint_note` in `mfd_view_render` (2.9) | S3.2 |
 | `line`, `hud_tick_strip`, `poly_fill`, `cockpit_draw_adi` | `video/mgraphic.c`, `sim/sim_cockpit.c` | `enh_hud_begin/_end_line`, `enh_hud_begin_tick/_tick/_end_tick`, `enh_rec_vecfill`, `enh_adi_begin/_end` (2.10) | S3.3 |
 | `r3d_draw_queued` (TV sprite), `poly_fill` mode 3, `mfd_map_save_bg` / `mfd_map_restore_bg` | `render3d/r3d_scene.c`, `video/mgraphic.c`, `sim/sim_mfd.c` | `enh_tv_sprite_pending`, `enh_rec_remap`, `enh_window_save/restore` (2.9) | S3.2 |
-| `r3d_cull_core`, `r3d_frustum_test` | `r3d_scene.c`, `r3d_object.c` | widen by kx/ky in wide display passes | S3.4 |
-| `r3d_draw_terrain` | `render3d/r3d_terrain.c` | wide cell table in wide display passes | S3.4 |
+| `r3d_cull_core`, `r3d_frustum_test` | `r3d_scene.c`, `r3d_object.c` | widen by kx/ky in wide display passes (`enh_wide_kx/ky`, `enh_wide_frustum`) | S3.4 |
+| `r3d_draw_terrain` | `render3d/r3d_terrain.c` | wide cell list in wide display passes (`enh_wide_cell`) | S3.4 |
+| `obj_overlay_frame` (S2 .. S3), `r3d_project_point` | `sim/sim_objovl.c` | `enh_wide_ovl`, `enh_wide_xfield`, `enh_wide_range` (3.5) | S3.4 |
+| `sim_quit_requester`, `sim_boss_screen` | `sim/sim_input.c` | `enh_menu` (pillarboxed while up) | S3.4 |
 | `frame_loop_body` | `sim/sim_main.c` | `enh_frame_begin()` before `view_frame` | S2.4 |
 | `frame_floor` wait loop, `frame_delay` | `sim/sim_main.c` | `enh_idle()` → display pass; return at once in sandbox | S2.4, S4.1 |
 | `sim_snd_cmd`, `sim_snd_noise` | `sim/sim_stubs.c` | no-op in sandbox | S2.4 |
@@ -434,6 +488,7 @@ no hook leaks into classic.
 | `r3d_hr_ref` | N=2, 4: capture the hr polygons (`r3d_trace`), fill them with an independent pixel-centre reference filler; differences only within 1 layer px of an edge, summary count per scene | S2.3 |
 | `enh_sandbox_hash` | as built (4.7): the `debrief_chain_sea` chain on the virtual clock, plain / 3 test-view display passes per VGAME frame / `--classic`: per-frame hashes of DGROUP, comm, LCG, sound driver, OPL stream, `mem[]`, VGA, canvas identical (canvas not compared with classic), final comm block and roster identical, 0 forbidden calls | S2.4 |
 | `sim_interp_equal` | the same scenarios with N=4, wide, interp (3 display passes per step, alpha .25/.5/.75) vs `--classic`: DGROUP after every step and the comm block at the end identical | S4.1 |
+| `enh_wide_geometry`, `r3d_hr_wide`, `r3d_hr_wide_realpath`, `enh_sandbox_hash` (`--wide` run) | the placement per view and window; the golden scenes with a wide main pass (reference, gaps, hole, seams); the real-path view sweep at 16:9 / 21:9 (3.5) | S3.4 |
 | headless dumps | `--headless --enh-dump DIR` + `F117_KEYS` scripts: front cockpit (h 91/107), rear, left, right, 0x44, chase, TV, map; N=2/4; 4:3, 16:9, 21:9; plus mask PNGs → U1 | S2.3, S3.x |
 
 ## 6 (e) Risks, open questions, plan changes
