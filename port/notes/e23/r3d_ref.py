@@ -48,6 +48,16 @@ class Ref:
         self.fills = 0
         self.sprites = self.dots = self.vlines = self.tints = 0
         self.vval = None                                       # the vector layer's expected values (S3.1), allocated on the first vector line
+        self.hole = None                                       # S3.4: (x0, x1, y) of the open wide pass
+        self.holes = []                                        # S3.4: the holes of the closed wide passes
+
+    def unhole(self):
+        """S3.4: the primitives of a wide pass inside its hole are not drawn: their pixels are not judged (a later pass, the TV camera, judges its own)"""
+        if self.hole:
+            x0, x1, y = self.hole
+            self.val[y:, x0:x1 + 1] = np.where(self.val[y:, x0:x1 + 1] == -1, -1, -2)
+            self.holes.append(self.hole)
+            self.hole = None
 
     def stamp_block(self, x0, y0, w, hh, colours):
         """S3.1: layer pixels (x0 + i, y0 + j) = colours[j, i] where >= 0 (0 = transparent when colours < 0 is not used), clipped to the pass window"""
@@ -149,7 +159,11 @@ class Ref:
         for ty, a in h.events():
             if ty != 4:
                 hz = False
+            if ty == 14:                                       # S3.4: the wide main pass never writes the frame below its 3D window (the panel)
+                self.hole = tuple(int(v) for v in a)
+                continue
             if ty == 0:
+                self.unhole()
                 self.win = tuple(int(v) for v in a[:4])
                 x0, y0, x1, y1 = self.win
                 if not int(a[4]):                              # S3.2: a pass that continues the previous one (the TV close view) keeps its pixels
@@ -294,6 +308,7 @@ def check(h):
     """-> dict of counts for one scenario"""
     r = Ref(h)
     r.run()
+    r.unhole()
     out = dict(judged=0, gap=0, wrong=0, stray=0, stamped=0, polys=r.polys, fills=r.fills, lines=r.lines, dith=0, sprites=r.sprites, dots=r.dots, vlines=r.vlines,
                vjudged=0, vgap=0, vwrong=0, vstray=0, tints=r.tints)
     if r.vval is not None and h.vec is not None:           # the vector layer: the clipped lines of the tracers / target boxes

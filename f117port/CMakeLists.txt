@@ -229,6 +229,11 @@ if(Python3_Interpreter_FOUND)
     add_test(NAME r3d_hr_wide_realpath COMMAND Python3::Interpreter ${CMAKE_CURRENT_SOURCE_DIR}/../port/notes/e34/wide_realpath.py
              $<TARGET_FILE:f117> ${CMAKE_CURRENT_SOURCE_DIR}/../Game ${CMAKE_CURRENT_BINARY_DIR}/r3d_hr_wide_realpath)
     set_tests_properties(r3d_hr_wide_realpath PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 900 PASS_REGULAR_EXPRESSION "wide-realpath OK")
+    # r3d_hr_wide (port/notes/e34/wide_scenes.py): the golden scenes with their main 3D pass drawn wide on a 16:9-like and a 21:9-like canvas at N = 2: the reference
+    # rasteriser on the whole layer, no unwritten pixel in the extended world, nothing in the panel hole, the frame equal to the frame-only render, no seam at the border.
+    add_test(NAME r3d_hr_wide COMMAND Python3::Interpreter ${CMAKE_CURRENT_SOURCE_DIR}/../port/notes/e34/wide_scenes.py
+             $<TARGET_FILE:f117> ${CMAKE_CURRENT_SOURCE_DIR}/../Game ${CMAKE_CURRENT_BINARY_DIR}/r3d_hr_wide ${CMAKE_CURRENT_BINARY_DIR}/r3d_golden 2)
+    set_tests_properties(r3d_hr_wide PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 1800 DEPENDS render3d_golden PASS_REGULAR_EXPRESSION "r3d-wide OK")
 endif()
 
 # ENH: every faithful test runs with the enhancements off (F117_CLASSIC acts as --classic for the Python drivers' own command lines).
