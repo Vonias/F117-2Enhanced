@@ -139,6 +139,8 @@ static void layers_free(void)
 
 static void layers_alloc(void)
 {
+    if (enh_hr.on) fprintf(stderr, "[enh] the layers were reallocated inside a 3D pass\n");   /* S3.4 fix: must never happen (the test greps for it) */
+    enh_hr.on = enh_hr.have = false;                   /* S3.4 fix: the hr pass context points into the old layers: void it (A17E, the next hooks see no pass) */
     size_t px = (size_t)enh_cv.lw * (size_t)enh_cv.lh;
     layers_free();
     l3d_work = calloc(px, sizeof(u16)); l3d_shown = calloc(px, sizeof(u16));
@@ -158,6 +160,8 @@ bool enh_canvas_update(int win_w, int win_h, bool aspect43)
 {
     EnhCanvas c;
     if (test_win_w > 0) { win_w = test_win_w; win_h = test_win_h; aspect43 = false; }
+    if (enh_hr.on || enh_sbx) return false;           /* S3.4 fix: never inside a 3D pass or a display pass (host_pump runs in the [262A] wait of r3d_begin_scene: a
+                                                       * view change, e.g. key c, resized the layers under the open pass -> writes into freed memory, the crash) */
     enh_canvas_geometry(&c, view, win_w, win_h, aspect43, enh.render_scale, enh.wide);
     if (!memcmp(&c, &enh_cv, sizeof c) && layer_px) return false;
     bool resized = c.lw != enh_cv.lw || c.lh != enh_cv.lh;

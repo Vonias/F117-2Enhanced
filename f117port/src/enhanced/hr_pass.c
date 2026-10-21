@@ -11,6 +11,7 @@
 #include "enhanced/enhanced.h"
 #include "enhanced/sandbox.h"
 #include "enhanced/wide.h"
+#include "host.h"
 #include "render3d/r3d.h"
 #include "video/video.h"
 
@@ -115,6 +116,8 @@ void enh_tv_backdrop(u16 ctx)
     continue_next = true;
 }
 
+static bool test_pump(void) { static int v = -1; if (v < 0) { const char *e = getenv("F117_TEST_PUMP"); v = e && *e == '1'; } return v == 1; }
+
 void enh_r3d_viewport(u16 vp)
 {
     (void)vp;
@@ -180,6 +183,8 @@ void enh_r3d_viewport(u16 vp)
     hr_raster_begin();
     hr_clip_begin();
     if (wide) enh_wide_begin();                                           /* S3.4: the widening factors of this canvas */
+    if (test_pump() && !enh_sbx && main_win) host_pump();                 /* S3.4 fix, test aid (F117_TEST_PUMP=1): a present inside the open main pass, as the
+                                                                           * real-time [262A] wait does (the canvas must not be resized under it) */
 }
 
 /* S3.2: the FLIR tint (C6DE) recolours the finished window x..x+w-1, y..y+h-1 (frame px) through the green ramp; the reference does the same to its expected colours */

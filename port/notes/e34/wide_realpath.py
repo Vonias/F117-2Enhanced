@@ -177,6 +177,32 @@ def night_run(exe, game, work):
     return 0 if ok else 1
 
 
+CVIEW_KEYS = NIGHT_KEYS.split(',90:')[0] + ',' + ','.join('%.1f:%s' % (66 + 0.7 * i, k) for i, k in enumerate(
+    ['2e', '2e', '2e', '2a+32', '2e', '3b', '2e', '2a+3b', '3b', '2e', '2a+35', '3b', '2e', '2e', '2e', '2a+34', '2e', '3b', '2e', '2e']))
+
+
+def cview_run(exe, game, work):
+    """S3.4 fix (the crash on key c): in flight, the second cockpit view toggled and cycled with the other views (each switch resizes the canvas), with the host
+    pumped inside the open main pass (F117_TEST_PUMP: as the real-time [262A] wait of r3d_begin_scene does); the run must end normally, the layers must never be
+    reallocated inside a 3D pass, and the second cockpit view must show its wide picture"""
+    os.environ['F117_WINDOW'] = ASPECTS['21x9']
+    os.environ['SEL'] = str(SELECT)
+    os.environ['F117_TEST_PUMP'] = '1'
+    try:
+        p, pre = RP.run(exe, game, work, 'wide_cview', N, CVIEW_KEYS, '', frames=200, extra='--wide')
+    finally:
+        os.environ.pop('F117_TEST_PUMP', None)
+    rows = parse(pre + '.txt')
+    side = sum(1 for r in rows if r['vclass'] == 4 and r['held'])
+    switches = sum(1 for a, b in zip(rows, rows[1:]) if (a['vclass'], a['view']) != (b['vclass'], b['view']))
+    ended = 'quit: START returned 0' in p.stdout
+    inpass = p.stderr.count('reallocated inside a 3D pass')
+    ok = ended and p.returncode == 0 and inpass == 0 and side >= 20 and switches >= 15
+    print('wide-realpath c-view cycling (21:9, host pumped inside the pass): %d frames, %d view switches, %d second-cockpit frames with the wide picture, '
+          'layers reallocated inside a pass %d, run ended %s%s' % (len(rows), switches, side, inpass, 'normally' if ended else 'ABNORMALLY (rc %d)' % p.returncode, '' if ok else '  BAD'))
+    return 0 if ok else 1
+
+
 def run(exe, game, work, aspect, frames_png=''):
     os.environ['F117_WINDOW'] = ASPECTS[aspect]
     os.environ['SEL'] = str(SELECT)
@@ -287,6 +313,7 @@ def main():
             if f.endswith('.raw'):
                 os.remove(os.path.join(work, 'wide_' + a, f))
     bad += night_run(exe, game, work)
+    bad += cview_run(exe, game, work)
     if png:
         contact(png, per)
     print('wide-realpath %s' % ('OK' if not bad else 'FAILED'))

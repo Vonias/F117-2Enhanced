@@ -328,6 +328,9 @@ The HUD symbology lines up with the world because the projection centre and scal
   VSI bar, x 247; colour 0 by day). They are hr vector lines (thin, Q3) of the same rows as the 1x bars: measured in a night take-off (`F117_TEST_NIGHT`, probe `bars`),
   0 rows differ. A 1x line over an hr line clears that vector block (`enh_rec_line`), every other 1x write makes the record art, so no hr line stays where the 1x page
   no longer shows it (probe `vstale`).
+* **No resize under an open pass (S3.4 fix 3).** The canvas geometry (and so the layer buffers) changes only outside a 3D pass and outside a display pass:
+  `enh_canvas_update` defers otherwise (the real-time `[262A]` wait of `r3d_begin_scene` presents, and a view change such as key c resizes the canvas); a
+  reallocation voids the hr pass context.
 * **`--wide` default: on** (S2.1's note "the default turns on with S3.4"; CLAUDE.md "enhanced defaults are on"); `--no-wide` and `--classic` turn it off; the launcher
   switch is S5.1's. With a 4:3 window (4:3 pixel aspect) the canvas is the frame and nothing changes.
 * **HUD anchor (3.4)** needed no code: the HUD, panel and MFDs are drawn in frame coordinates by the canonical frame and composed from it; the projection centre and
