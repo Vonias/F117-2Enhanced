@@ -145,6 +145,38 @@ def check(rows, aspect):
     return bad, lines
 
 
+NIGHT_KEYS = '1:31,2:03,11:39,63:2a+0d,64:0b,64.5:0b,90:50p,93:50r'   # S3.4 fix: full throttle, brakes off, take off: the speed (stall-margin bar) and the VSI change
+NIGHT_FRAMES = 160
+
+
+def night_run(exe, game, work):
+    """the night take-off (F117_TEST_NIGHT: the night flag, 7898's bars in colour 0x2A): every frame the bars beside the airspeed tape (x 72) and the altitude
+    tape (x 247) must be shown on exactly the rows the 1x page has them (probe `bars`), and no hr HUD line may stay under a later 1x write (`vstale`)"""
+    os.environ['F117_WINDOW'] = ASPECTS['16x9']
+    os.environ['SEL'] = str(SELECT)
+    os.environ['F117_TEST_NIGHT'] = '1'
+    try:
+        p, pre = RP.run(exe, game, work, 'wide_night', N, NIGHT_KEYS, '', frames=NIGHT_FRAMES, extra='--wide')
+    finally:
+        os.environ.pop('F117_TEST_NIGHT', None)
+    mis = px = stale = n = 0
+    spd = []
+    for l in open(pre + '.txt'):
+        m = re.search(r' bars=(\d+)/(\d+)', l)
+        v = re.search(r' vstale=(\d+)', l)
+        sp = re.search(r' spd=(-?\d+)', l)
+        if not m:
+            continue
+        n += 1
+        mis += int(m.group(1)); px += int(m.group(2)); stale = max(stale, int(v.group(1)) if v else 0)
+        if sp:
+            spd.append(int(sp.group(1)))
+    ok = n >= NIGHT_FRAMES - 10 and px > 500 and mis == 0 and stale == 0 and spd and max(spd) > 100
+    print('wide-realpath night take-off (16:9): %d frames, speed %d..%d; the 7898 bars beside the tapes: %d bar rows shown, %d differ from the 1x page; stale hr HUD pixels max %d%s' % (
+        n, min(spd or [0]), max(spd or [0]), px, mis, stale, '' if ok else '  BAD'))
+    return 0 if ok else 1
+
+
 def run(exe, game, work, aspect, frames_png=''):
     os.environ['F117_WINDOW'] = ASPECTS[aspect]
     os.environ['SEL'] = str(SELECT)
@@ -254,6 +286,7 @@ def main():
         for f in os.listdir(os.path.join(work, 'wide_' + a)):
             if f.endswith('.raw'):
                 os.remove(os.path.join(work, 'wide_' + a, f))
+    bad += night_run(exe, game, work)
     if png:
         contact(png, per)
     print('wide-realpath %s' % ('OK' if not bad else 'FAILED'))

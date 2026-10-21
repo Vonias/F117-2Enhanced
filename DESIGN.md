@@ -324,6 +324,10 @@ The HUD symbology lines up with the world because the projection centre and scal
   `--render-scale N` is kept also with wide when it is larger than the window holds (S2.1 lowered it to the fit): the canvas then holds at least the frame and the
   host scales it down, as without wide (so the headless tests keep their N). VGAME's own screens (the quit requester Alt-Q, the boss screen Alt-B) set the menu
   placement while they are up (`enh_menu`, hooks in `sim_input.c`): pillarboxed, no extended world. Pause (Alt-P) keeps the frozen extended frame.
+* **The red lines beside the tapes (S3.4 fix 2)** are the original night bars of 7898 (colour 0x2A: the stall-margin bar right of the airspeed tape, x 72, and the
+  VSI bar, x 247; colour 0 by day). They are hr vector lines (thin, Q3) of the same rows as the 1x bars: measured in a night take-off (`F117_TEST_NIGHT`, probe `bars`),
+  0 rows differ. A 1x line over an hr line clears that vector block (`enh_rec_line`), every other 1x write makes the record art, so no hr line stays where the 1x page
+  no longer shows it (probe `vstale`).
 * **`--wide` default: on** (S2.1's note "the default turns on with S3.4"; CLAUDE.md "enhanced defaults are on"); `--no-wide` and `--classic` turn it off; the launcher
   switch is S5.1's. With a 4:3 window (4:3 pixel aspect) the canvas is the frame and nothing changes.
 * **HUD anchor (3.4)** needed no code: the HUD, panel and MFDs are drawn in frame coordinates by the canonical frame and composed from it; the projection centre and

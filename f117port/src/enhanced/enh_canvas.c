@@ -550,6 +550,18 @@ static void probe_wide(FILE *f, const u8 *pg)
     }
     if (fy > 0) for (int x = fx; x < fx + 320 * n; x++) PAIR(2, x, fy - 1, x, fy);
 #undef PAIR
+    long barmis = 0, barpx = 0;                /* S3.4 fix: the 7898 bars beside the tapes (x 72 stall margin, x 247 VSI; colour 0x2A at night): rows shown in the bar colour vs the 1x rows */
+    for (int k = 0; k < 2; k++) {
+        const int bx = k ? 247 : 72;
+        for (int y = 0; y < 91; y++) {
+            const bool p1 = pg[y * 320 + bx] == 0x2A;
+            bool sh = false;
+            for (int kx = 0; kx < n && !sh; kx++) sh = img[(size_t)(fy + y * n + n / 2) * lw + (size_t)(fx + bx * n + kx)] == pal[0x2A];
+            if (p1 || sh) barpx++;
+            if (p1 != sh) barmis++;
+        }
+    }
+    fprintf(f, " bars=%ld/%ld", barmis, barpx);
     fprintf(f, " lw=%d lh=%d n=%d fx=%d fy=%d vclass=%d held=%d style=%x world=%ld world1=%ld art=%ld vec=%ld black=%ld eworld=%ld eblack=%ld evec=%ld epx=%ld"
                " seaml=%ld/%ld seamr=%ld/%ld seamt=%ld/%ld seamref=%ld/%ld", lw, lh, n, fx, fy, (int)view, cs.l3h != NULL, DSB(0x294B), all[CLS_WORLD], all[CLS_WORLD1],
             all[CLS_ART], all[CLS_VEC], all[CLS_BLACK], ext[CLS_WORLD], ext[CLS_BLACK], ext[CLS_VEC], ext[0] + ext[1] + ext[2] + ext[3] + ext[4],
@@ -615,6 +627,7 @@ static void probe_flip(void)
                         }
                     }
             }
+        fprintf(f, " spd=%d alt=%d vs=%d night=%d", (s16)DSW(0xB168), (s16)DSW(0x2DF4), (s16)DSW(0xE55A), DSW(0x3658));
         fprintf(f, " vstale=%ld vstalebox=%d,%d,%d,%d vstalecol=%d/%d", vmis, bx0, by0, bx1, by1, mcol, mv);
     }
     fprintf(f, "\n");

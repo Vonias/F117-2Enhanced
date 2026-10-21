@@ -170,10 +170,12 @@ static void hash_line(void)
 /* ---------------------------------------------------------------- hooks */
 
 static int frame_passes;
+static bool enh_test_night(void) { static int v = -1; if (v < 0) { const char *e = getenv("F117_TEST_NIGHT"); v = e && *e == '1'; } return v == 1 && !enh.classic; }
 static bool wide_due;          /* S3.4: this frame gets a wide display pass */
 
 void enh_frame_begin(void)
 {
+    if (enh_test_night()) DSW(0x3658) = 1;   /* S3.4 test aid (F117_TEST_NIGHT=1, real-path tests only): the night flag, so 7898 draws its bars in 0x2A */
     if (enh.sandbox_hash[0]) hash_line();
     frame_passes = 0;
     img_a.valid = false;
