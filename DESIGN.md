@@ -259,8 +259,8 @@ Extensions in original pixels: `El = fx/N`, `Er = (Lw - fx - 320N)/N`, `Et = fy/
 |---|---|---|---|
 | 0 front cockpit | x 0..Lw-1, y 0..Lh-1 (frame panel rows covered by art via compose) | `fx+159N, fy+52N` (60 with `[294B]`) | the world left, right, above and beside the panel (Q4) |
 | 0x44, 0x84..0x8C (full-screen 3D, outside) | whole canvas | `fx+159N, fy+100N` | the world |
-| 0x41..0x43 rear/left/right | frame only | frame-mapped | black: the whole 320x200 picture (3D at N×, art NxN) as large as fits, centred (Q1) |
-| second cockpit view (window frame up top) = **view 0 with `[294B]` = 1** (identified in S3.4, below) | frame only | frame-mapped | not extended (no art for the frame above): the whole picture scaled up, fit height, centred, as 0x41..0x43 (Decisions 2026-10-21) |
+| 0x41..0x43 rear/left/right | frame only | frame-mapped | not extended: the whole 320x200 picture (3D at N×, art NxN) **filling the window height** (scale = window height / 200 with the pixel aspect, non-integer: the canvas is the frame at N = ceil(height / 200) and the host scales it), black only at the sides (Decisions 2026-10-21 b) |
+| second cockpit view (window frame up top) = **view 0 with `[294B]` = 1** (identified in S3.4, below) | canvas | frame-mapped | **filling the window height** (as 0x41..0x43) and **extended left and right only**: the canvas is 200N high and as wide as the window's aspect, the frame top centre, the world beside it from the wide pass; nothing above (no art for the frame above) (Decisions 2026-10-21 b) |
 | TV, map MFD | their frame rect at N× | frame-mapped | not extended (panel) |
 | SETUP/shell/START/END/debrief, VGAME menus | — | — | 320x200 (or 640x400 text) scaled by the largest whole N, centred, black bars |
 
@@ -316,7 +316,11 @@ The HUD symbology lines up with the world because the projection centre and scal
   visit, each put before the first original cell that is not farther (far -> near, outer first; the camera cell and path A's tail stay last). New far cells (dot >=
   that of the original's first four) count as "i < 4" for the low-detail skip. The down-look table becomes the full 5 x 5 (the 16 ring cells first) when the pitch
   is below 60 degrees down **or** the lower edge of the extended view looks past the vertical (`pitch < -(90 deg - atan(down / 192))`).
-* **Placement.** `enh_view_class(C07A, [294B])`: view 0 with `[294B]` = 0 FRONT, with `[294B]` = 1 FIT (the second cockpit view), 0x41..0x43 FIT, the rest FULL.
+* **Placement.** `enh_view_class(C07A, [294B])`: view 0 with `[294B]` = 0 FRONT, with `[294B]` = 1 SIDE (the second cockpit view), 0x41..0x43 FIT, the rest FULL.
+  **S3.4 fix (Decisions 2026-10-21 b):** FIT and SIDE fill the window height. Both render at N = ceil(Lh / 200) (or the fixed `--render-scale`) with a canvas 200N high:
+  FIT's canvas is the frame (320N x 200N), SIDE's is as wide as the window's aspect (`Lw 200N / Lh`), the frame at the top centre, the 3D viewport the whole canvas
+  (extended left and right only; the wide pass runs for it with the half-scale tangents of `[294B]`: the frustum's mx / 128, my / 96; B85D's halved X keeps mx / 256).
+  The host's letterbox presentation scales the canvas to the window height, so the shown scale is height / 200 (non-integer; black only at the sides of FIT).
   `--render-scale N` is kept also with wide when it is larger than the window holds (S2.1 lowered it to the fit): the canvas then holds at least the frame and the
   host scales it down, as without wide (so the headless tests keep their N). VGAME's own screens (the quit requester Alt-Q, the boss screen Alt-B) set the menu
   placement while they are up (`enh_menu`, hooks in `sim_input.c`): pillarboxed, no extended world. Pause (Alt-P) keeps the frozen extended frame.

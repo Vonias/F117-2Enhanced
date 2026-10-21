@@ -59,6 +59,21 @@ void enh_canvas_geometry(EnhCanvas *c, EnhView v, int win_w, int win_h, bool asp
         c->vx = c->vy = 0; c->vw = c->lw; c->vh = c->lh;
         return;
     }
+    if (v == ENH_VIEW_FIT || v == ENH_VIEW_SIDE) {             /* S3.4 fix (Decisions 2026-10-21 b): the picture fills the window height at the scale height / 200 */
+        int nf = fixed_n > 0 ? fixed_n : (lh + 199) / 200;     /* rendered at the next whole N at or above it; the host scales the canvas to the window (letterbox) */
+        if (nf < 1) nf = 1;
+        if (nf > MAX_SIDE / 320) nf = MAX_SIDE / 320;
+        int cw = 320 * nf;
+        if (v == ENH_VIEW_SIDE) {                              /* as wide as the window's aspect at that height: the world beside the frame */
+            long long w = (long long)lw * (200 * nf) / lh;
+            if (w > cw) cw = (int)(w > MAX_SIDE ? MAX_SIDE : w);
+        }
+        c->lw = cw; c->lh = 200 * nf; c->n = nf;
+        c->fx = (cw - 320 * nf) / 2; c->fy = 0;
+        if (v == ENH_VIEW_SIDE) { c->vx = 0; c->vy = 0; c->vw = cw; c->vh = 200 * nf; }
+        else { c->vx = c->fx; c->vy = 0; c->vw = 320 * nf; c->vh = 200 * nf; }
+        return;
+    }
     int n = fixed_n > 0 ? fixed_n : fit;                       /* S3.4: a fixed scale is kept, as without wide (the canvas then holds at least the frame) */
     if (n > MAX_SIDE / 320) n = MAX_SIDE / 320;
     if (lw < 320 * n) lw = 320 * n;
@@ -89,7 +104,7 @@ void enh_canvas_set_active(bool on)
  * picture fitted and centred (DESIGN 3.2). */
 EnhView enh_view_class(int m, int style)
 {
-    if (m == 0) return style ? ENH_VIEW_FIT : ENH_VIEW_FRONT;
+    if (m == 0) return style ? ENH_VIEW_SIDE : ENH_VIEW_FRONT;
     if (m >= 0x41 && m <= 0x43) return ENH_VIEW_FIT;
     return ENH_VIEW_FULL;
 }
@@ -108,7 +123,7 @@ void enh_menu(bool on)
 
 bool enh_canvas_extended(void)
 {
-    return (view == ENH_VIEW_FRONT || view == ENH_VIEW_FULL) && (enh_cv.vw > 320 * enh_cv.n || enh_cv.vh > 200 * enh_cv.n);
+    return (view == ENH_VIEW_FRONT || view == ENH_VIEW_FULL || view == ENH_VIEW_SIDE) && (enh_cv.vw > 320 * enh_cv.n || enh_cv.vh > 200 * enh_cv.n);
 }
 
 EnhView enh_view_get(void) { return view; }
@@ -178,6 +193,11 @@ static void vec_clear_block(u16 off, u16 seg)
     if (!lv) return;
     int x = off % 320, y = off / 320, n = enh_cv.n;
     int bx = enh_cv.fx + x * n, by = enh_cv.fy + y * n;
+    bool any = false;
+    for (int ky = 0; ky < n && !any; ky++)
+        for (int kx = 0; kx < n; kx++) if (lv[(size_t)(by + ky) * enh_cv.lw + bx + kx] & 0x100) { any = true; break; }
+    if (!any) return;
+    if (hr_tracing && lv == lvec_work) { s32 t[4] = { bx, by, bx + n - 1, by + n - 1 }; hr_trace(15, 4, t); }   /* S3.4 fix: 15 = this block of the vector layer was cleared */
     for (int ky = 0; ky < n; ky++) memset(lv + (size_t)(by + ky) * enh_cv.lw + bx, 0, (size_t)n * sizeof(u16));
 }
 
@@ -191,8 +211,12 @@ void enh_rec_line(u16 seg, u16 off, u8 val)
     bool fresh = r->src != SRC_NONE && old == r->val;
     if (!fresh) vec_clear_block(off, seg);
     if ((r->src == SRC_VEC || r->src == SRC_VECHR) && fresh) {      /* a line over a line keeps what was below both */
+        if (enh_vec_hold <= 0) {                                    /* a classic line over an hr one: shown as its original pixel */
+            if (val != r->val || r->src == SRC_VECHR) vec_clear_block(off, seg);   /* S3.4 fix: the hr line under it goes; before, the compositor kept showing it
+                                                                                    * over the 1x line (e.g. a colour-0 bar of 7898 drawn over an hr HUD line) */
+            r->src = SRC_VEC;
+        }
         r->val = val;
-        if (enh_vec_hold <= 0) r->src = SRC_VEC;                    /* a classic line over an hr one: shown as its original pixel */
         return;
     }
     r->under3d = (u8)(r->src == SRC_3D && fresh);
@@ -573,6 +597,26 @@ static void probe_flip(void)
             DSW(0xDFDC), DSW(0xDEDA), DSW(0x365E), DSW(0xC07A), DSB(0x4088), video_draw_seg(), DSW(0xE2FE), DSW(0x3D66), DSW(0x3D64), DSB(0x2CA0), DSB(0x2CA1), DSB(0x294A));
     for (int k = 0; k < VR_N; k++) fprintf(f, " %s %ld/%ld", vname[k], vh[k], vt[k]);
     probe_wide(f, pg);                                                /* S3.4 */
+    {   /* S3.4 fix: hr vector pixels left in a block whose last write was a classic 1x line (vstale; the compositor would show the stale hr line there) */
+        long vmis = 0;
+        int bx0 = 999, by0 = 999, bx1 = -1, by1 = -1, mcol = -1, mv = -1;
+        const int nn = enh_cv.n;
+        for (int y = 0; y < 107 && lvec_shown; y++)                  /* the HUD (the 3D window rows; the map's 2x2 blips legitimately sit on route-line blocks) */
+            for (int x = 0; x < 320; x++) {
+                const Shadow *r = &sh_shown[y * 320 + x];
+                const u8 v = pg[y * 320 + x];
+                if (r->src != SRC_VEC || r->val != v) continue;          /* the last write was a classic (1x) line: its block must show no hr line pixel */
+                for (int ky = 0; ky < nn; ky++)
+                    for (int kx = 0; kx < nn; kx++) {
+                        const u16 l = lvec_shown[(size_t)(enh_cv.fy + y * nn + ky) * enh_cv.lw + (size_t)(enh_cv.fx + x * nn + kx)];
+                        if (l & 0x100) {
+                            vmis++; mcol = (u8)l; mv = v;
+                            if (x < bx0) { bx0 = x; } if (x > bx1) { bx1 = x; } if (y < by0) { by0 = y; } if (y > by1) { by1 = y; }
+                        }
+                    }
+            }
+        fprintf(f, " vstale=%ld vstalebox=%d,%d,%d,%d vstalecol=%d/%d", vmis, bx0, by0, bx1, by1, mcol, mv);
+    }
     fprintf(f, "\n");
     fflush(f);
     const char *e = getenv("F117_PROBE_FRAMES");

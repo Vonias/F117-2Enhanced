@@ -12,7 +12,8 @@ typedef enum {
     ENH_VIEW_MENU,    /* shell, menus, debrief: pillarboxed, centred */
     ENH_VIEW_FRONT,   /* front cockpit: bottom centre, the world around it (Decisions Q4) */
     ENH_VIEW_FULL,    /* full-screen 3D / outside views: bottom centre, the world around it */
-    ENH_VIEW_FIT      /* left, right, rear: the whole picture fitted to the window height (Q1) */
+    ENH_VIEW_FIT,     /* left, right, rear: the whole picture filling the window height (Decisions 2026-10-21 b: the canvas is the frame, the host scales it) */
+    ENH_VIEW_SIDE     /* the second cockpit view (view 0, [294B] = 1): the frame filling the window height, the world extended left and right only (2026-10-21 b) */
 } EnhView;
 
 typedef struct {

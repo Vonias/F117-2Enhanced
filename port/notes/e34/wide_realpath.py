@@ -11,8 +11,11 @@ sides show the world, against the same count across block boundaries inside the 
 Checked per settled view (the frames 4.. after a view change):
   first cockpit view, outside views: the wide picture is shown, >= 99.5 % of the area outside the frame is the 3D world, the frame sits bottom centre, the seam rate
     is not above the inside rate + 3 %;
-  second cockpit view, left / right / rear: not extended: the frame centred, the area outside it all black, no wide picture.
-With --png DIR: DIR/wide_<aspect>_<view>.png (the presented canvas of one frame per view) and DIR/contact_wide.png (16:9 left, 21:9 right).
+  second cockpit view (Decisions 2026-10-21 b): the canvas is the frame's height (the host fits it to the window height) and wider, the frame top centre, the area
+    beside it the 3D world (the same checks);
+  left / right / rear: the canvas is the frame (the host scales it to the window height, black sides), no wide picture.
+With --png DIR: DIR/wide_<aspect>_<view>.png (one frame per view as the window shows it: the canvas at the 4:3 pixel aspect, letterboxed into the
+window) and DIR/contact_wide.png (16:9 left, 21:9 right).
 
 usage: python wide_realpath.py <f117 executable> <game dir> <work dir> [--png DIR] [--aspect 16x9,21x9]      exit 77 without the game files
 """
@@ -28,7 +31,7 @@ N = 4
 ASPECTS = {'16x9': '1920x1080', '21x9': '2560x1080'}
 VIEW_KEYS = [  # (t in s, XT scan codes (2a = left shift held), label, C07A, [294B], expected class 1 FRONT / 2 FULL / 3 FIT)
     (None, None, 'cockpit', 0x00, 0, 1),
-    (67, '2e', 'cockpit2', 0x00, 1, 3),
+    (67, '2e', 'cockpit2', 0x00, 1, 4),
     (70, '2e', 'cockpit_again', 0x00, 0, 1),
     (73, '2a+32', 'left', 0x42, None, 3),
     (76, '2a+33', 'right', 0x43, None, 3),
@@ -47,7 +50,7 @@ SELECT = 50                                  # frame-loop iterations before the 
 KEYS = '1:31,2:03,11:39,' + ','.join('%d:%s' % (t, k) for t, k, *_ in VIEW_KEYS if t)
 EXT_MIN = 0.995
 SEAM_SLACK = 0.03
-CLASS = {1: 'front (extended)', 2: 'full (extended)', 3: 'fit (whole picture)', 0: 'menu'}
+CLASS = {1: 'front (extended)', 2: 'full (extended)', 3: 'fit (whole, height)', 4: 'side (height, L/R)', 0: 'menu'}
 
 
 def parse(path):
@@ -116,25 +119,25 @@ def check(rows, aspect):
         msg = '  %-16s view %02X style %d class %-20s frames %3d..%3d: world %5.1f %%, art %5.1f %%, vector %4.1f %%, black %5.1f %% of the canvas; outside the frame: world %5.1f %%, black %5.1f %%' % (
             label, r0['view'], r0['style'], CLASS.get(r0['vclass'], '?'), rr[0]['frame'], rr[-1]['frame'], frac('world') + frac('world1'), frac('art'), frac('vec'), frac('black'),
             100.0 * r0['eworld'] / epx, 100.0 * r0['eblack'] / epx)
-        if cls in (1, 2):
+        if cls in (1, 2, 4):
             msg += '; seams %d/%d (%.2f %%, inside %.2f %%)' % (sd, sp, 100 * seam, 100 * ref)
         probs = []
         if any(r['vclass'] != cls for r in rr):
             probs.append('class')
-        if cls in (1, 2):
+        if cls in (1, 2, 4):
             if any(not r['held'] for r in rr):
                 probs.append('no wide picture in %d frames' % sum(1 for r in rr if not r['held']))
             if min(r['eworld'] / max(1, r['epx']) for r in rr) < EXT_MIN:
                 probs.append('outside world below %.1f %%' % (100 * EXT_MIN))
             if any(r['fy'] != r['lh'] - 200 * r['n'] for r in rr):
                 probs.append('frame not at the bottom')
+            if cls == 4 and any(r['lh'] != 200 * r['n'] or r['lw'] <= 320 * r['n'] for r in rr):
+                probs.append('not height-fitted and extended sideways')
             if sp < 100 or seam > ref + SEAM_SLACK:
                 probs.append('seam')
-        else:
-            if any(r['held'] or r['eworld'] or r['eblack'] != r['epx'] for r in rr):
-                probs.append('extended (the area outside the frame is not all black)')
-            if any(r['fy'] != (r['lh'] - 200 * r['n']) // 2 or r['fx'] != (r['lw'] - 320 * r['n']) // 2 for r in rr):
-                probs.append('frame not centred')
+        else:                                          # the canvas is the frame: the host scales it to the window height, black sides
+            if any(r['held'] or r['epx'] or r['lw'] != 320 * r['n'] or r['lh'] != 200 * r['n'] for r in rr):
+                probs.append('not the whole frame filling the height')
         if probs:
             bad += 1
             msg += '  BAD: ' + ', '.join(probs)
@@ -157,6 +160,20 @@ def png_frames():
     return out
 
 
+def present(rgb, aspect):
+    """the canvas as the window shows it: the host stretches it to the 4:3 pixel aspect (x 1.2 vertically) and letterboxes it into the window (nearest)"""
+    import numpy as np
+    from PIL import Image
+    ww, wh = (int(v) for v in ASPECTS[aspect].split('x'))
+    ch, cw = rgb.shape[0] * 1.2, rgb.shape[1]
+    k = min(ww / cw, wh / ch)
+    w, h = max(1, round(cw * k)), max(1, round(ch * k))
+    img = Image.fromarray(rgb).resize((w, h), Image.NEAREST)
+    win = Image.new('RGB', (ww, wh), (0, 0, 0))
+    win.paste(img, ((ww - w) // 2, (wh - h) // 2))
+    return np.asarray(win)
+
+
 def write_pngs(pre, out, aspect, rows):
     import numpy as np
     from PIL import Image
@@ -170,6 +187,7 @@ def write_pngs(pre, out, aspect, rows):
         lw, lh = (int(v) for v in np.frombuffer(b, '<i4', 2))
         im = np.frombuffer(b, '<u4', lw * lh, 8).reshape(lh, lw)
         rgb = np.stack([(im >> 16) & 255, (im >> 8) & 255, im & 255], 2).astype(np.uint8)
+        rgb = present(rgb, aspect)
         Image.fromarray(rgb).save(os.path.join(out, 'wide_%s_%s.png' % (aspect, label)))
         r = byf.get(fr)
         imgs[label] = (rgb, '%s  view %02X%s' % (label, r['view'], ' style %d' % r['style'] if r and r['view'] == 0 else '') if r else label)

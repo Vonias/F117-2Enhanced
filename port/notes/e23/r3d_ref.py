@@ -169,6 +169,10 @@ class Ref:
                 if not int(a[4]):                              # S3.2: a pass that continues the previous one (the TV close view) keeps its pixels
                     self.val[y0:y1 + 1, x0:x1 + 1] = -1
                 edges = []
+            elif ty == 15:                                     # S3.4 fix: a block of the vector layer was cleared (a 1x line drew over an hr line there)
+                if self.vval is not None:
+                    x0, y0, x1, y1 = [int(v) for v in a]
+                    self.vval[y0:y1 + 1, x0:x1 + 1] = -2           # not judged (a later line may write it again)
             elif ty == 10:                                     # S3.2: the FLIR tint recoloured the window through the green ramp 98h-9Fh
                 x0, y0, x1, y1 = [int(v) for v in a]
                 blk = self.val[y0:y1 + 1, x0:x1 + 1]

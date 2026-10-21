@@ -30,16 +30,18 @@ void enh_wide_begin(void)
     /* E8B5: the tolerances were made for a half width of 160 and a half height of up0 (DESIGN 3.3: kx = (160 + E) / 160, ky = (up0 + E) / up0) */
     wf.kx = mx * 256 / 160 > 256 ? (mx * 256 + 159) / 160 : 256;
     wf.ky = my * 256 / up0 > 256 ? (my * 256 + up0 - 1) / up0 : 256;
-    /* 02B6 and B85D test a 45-degree field (tangent 1); the extended half angles have the tangents mx / 256 (x) and my / 192 (y) */
-    wf.tx = mx > 256 ? mx : 256;
-    wf.ty = my * 256 / 192 > 256 ? (my * 256 + 191) / 192 : 256;
-    wf.xf = wf.tx;
+    /* 02B6 and B85D test a 45-degree field (tangent 1); the extended half angles have the tangents mx / 256 (x) and my / 192 (y), with [294B] (the second cockpit
+     * view: half-scale projection, 128 / 96 px per unit) mx / 128 and my / 96 */
+    const int sx = DSB(0x294B) ? 128 : 256, sy = DSB(0x294B) ? 96 : 192;
+    wf.tx = mx > sx ? (mx * 256 + sx - 1) / sx : 256;
+    wf.ty = my * 256 / sy > 256 ? (my * 256 + sy - 1) / sy : 256;
+    wf.xf = mx > 256 ? mx : 256;                               /* B85D halves X for [294B] before its 256-scale projection: its field is mx / 256 in both styles */
     wf.xlo = -cdiv(h->fx, n);
     wf.xhi = 319 + cdiv(h->lw - h->fx - 320 * n, n);
     wf.ylo = -cdiv(h->fy, n);
     wf.yhi = cdiv(h->lh - h->fy, n) - 1;
     /* 04DA: the full 5x5 cells (instead of the forward half) when the lower edge of the view looks behind the camera, or past 60 degrees down as in the original */
-    double a = atan((double)ext_d / 192.0) * 32768.0 / 3.14159265358979;                        /* the lower half angle in the 16-bit angle unit (4000h = 90 degrees) */
+    double a = atan((double)ext_d / (double)sy) * 32768.0 / 3.14159265358979;                        /* the lower half angle in the 16-bit angle unit (4000h = 90 degrees) */
     int thr = -(0x4000 - (int)a);
     wf.down_thr = (s16)(thr > (s16)0xD555 ? thr : (s16)0xD555);
     enh_wide_on = enh_wide_pt = true;
@@ -163,6 +165,6 @@ bool enh_wide_due(void)
     if (enh_view_class((int)mode, DSB(0x294B)) == ENH_VIEW_FIT || enh_view_class((int)mode, DSB(0x294B)) == ENH_VIEW_MENU) return false;
     if (DSW(0x2E48) != mode) return false;                 /* a view change: view_frame loads the cockpit picture (a file read, refused in a pass); one frame without */
     const EnhView v = enh_view_get();
-    if (v != ENH_VIEW_FRONT && v != ENH_VIEW_FULL) return false;   /* the canvas still has another view's placement (it follows at the next present) */
+    if (v != ENH_VIEW_FRONT && v != ENH_VIEW_FULL && v != ENH_VIEW_SIDE) return false;   /* the canvas still has another view's placement (it follows at the next present) */
     return enh_cv.vw > 320 * enh_cv.n || enh_cv.vh > 200 * enh_cv.n;
 }

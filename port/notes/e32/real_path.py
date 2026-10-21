@@ -56,6 +56,8 @@ def parse(path):
                         d['hudcol'] = v
                     elif k == 'hudlvl':
                         d['hudlvl'] = int(v, 16)
+                    elif k == 'vstale':                       # S3.4 fix: hr HUD line pixels left under a later classic line (must be 0)
+                        d['vstale'] = int(v)
                     i += 1
                 else:
                     a, b = f[i + 1].split('/')
@@ -100,6 +102,11 @@ def check_hud(rows):
                 bad += 1
                 msg += ' BAD'
         out.append(msg)
+    stale = max((r.get('vstale', 0) for r in rows), default=0)
+    out.append('  stale hr HUD line pixels (an hr line left under a later 1x line in the HUD rows): max %d per frame' % stale)
+    if stale:
+        bad += 1
+        out.append('  an hr HUD line stays where the original has drawn over it')
     route = [r for r in rows if 458 <= r['frame'] <= 486]       # the navigation page: mfd_map_route draws the legs on both pages every step
     scope = [r for r in rows if 500 <= r['frame'] <= 525]       # the left MFD scope: range rings and sweep lines
     if route and scope:
