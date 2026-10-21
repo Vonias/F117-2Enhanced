@@ -260,6 +260,7 @@ Extensions in original pixels: `El = fx/N`, `Er = (Lw - fx - 320N)/N`, `Et = fy/
 | 0 front cockpit | x 0..Lw-1, y 0..Lh-1 (frame panel rows covered by art via compose) | `fx+159N, fy+52N` (60 with `[294B]`) | the world left, right, above and beside the panel (Q4) |
 | 0x44, 0x84..0x8C (full-screen 3D, outside) | whole canvas | `fx+159N, fy+100N` | the world |
 | 0x41..0x43 rear/left/right | frame only | frame-mapped | black: the whole 320x200 picture (3D at N×, art NxN) as large as fits, centred (Q1) |
+| second cockpit view (window frame up top) | frame only | frame-mapped | not extended (no art for the frame above): the whole picture scaled up, fit height, centred, as 0x41..0x43 (Decisions 2026-10-21) |
 | TV, map MFD | their frame rect at N× | frame-mapped | not extended (panel) |
 | SETUP/shell/START/END/debrief, VGAME menus | — | — | 320x200 (or 640x400 text) scaled by the largest whole N, centred, black bars |
 

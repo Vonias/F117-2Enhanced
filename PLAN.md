@@ -22,7 +22,6 @@ remove it when it is done.
 
 | Task | What to do | For | Time |
 |---|---|---|---|
-| U1 | Fly with `& "C:\Coding\F117-2Enhanced\f117port\build\f117-enhanced.exe" --game-dir "C:\Coding\F117-2\Game" --render-scale 4` (PowerShell) and compare with `--classic`. Check that the HUD ladder rungs, the airspeed / altitude tape lines and ticks, the heading tape, the glass frame, the reticle bars and (F9, near the landing site) the ILS needles, the attitude indicator's horizon and the map lines (F8 = the navigation page draws the route legs on the left MFD map; F3 = the scope rings) are thin and sharp, while the numbers, labels, the reticle / flight-path symbols and the panel are still the original pixels. HUD colour modes: F4 = the other HUD colour set, `v` = HUD style 0/1/2, `c` = small view, Alt-N = night: the lines must keep following the colour. Contact sheet of the real frames (classic left, hr right): `work/e33/contact_hud.png`, single crops `work/e33/hud_<state>_<hud|mfd>_<classic|hr>.png`. | S3.3 | 10 min |
 
 ## Status
 
@@ -116,7 +115,7 @@ Notes:
 |---|---|---|---|---|
 | S3.1 | The main 3D view at N× in all view modes: routing 3D vs HUD (9ACA, A17E), sprites, dots and tracers at N× positions, keyed frames through the compositor (DESIGN 2.5, 2.6) | S | M done 2026-10-20 · U1 OK 2026-10-20 |
 | S3.2 | The TV/sensor camera window and the map MFD terrain at N× (verify the viewport hook covers bf71 and 119C, ortho mode) | S | S | done 2026-10-20 · U1 OK 2026-10-20 |
-| S3.3 | HUD and MFD vector graphics at N× (pitch ladder, tapes' lines, reticle, ILS, ADI, map lines and blips) in the vector layer; fonts and bitmaps stay the original pixels | S | M | done 2026-10-20 · U1 pending |
+| S3.3 | HUD and MFD vector graphics at N× (pitch ladder, tapes' lines, reticle, ILS, ADI, map lines and blips) in the vector layer; fonts and bitmaps stay the original pixels | S | M | done 2026-10-20 · U1 OK 2026-10-21 |
 | S3.4 | Wider view: per-view canvas geometry, widened culling, B85D range and terrain cells in display passes (needs S2.4); left/right/rear as a whole picture; `--classic` = 320x200 (DESIGN 3) | O | M | |
 | S3.5 | Smooth distance shading (option, launcher switch, default off): the colour bands that show distance (the sky/ground bands of 1442 and the depth shade of faces and terrain, render3d "depth shade") blended into a gradual gradient instead of steps; the hr layer keeps the band index plus the distance fraction, the compositor mixes the two neighbouring band colours from the live DAC (so fades and flashes still apply); off and `--classic` = the original bands | O | M | |
 | S3.6 | True night (option, launcher switch, default off): in night missions the sky and the ground are much darker and the lit distance is shorter (terrain and objects fade into the dark sooner); done in the compositor as a transform of the night palette's sky/ground/distance-shade colours by distance, using the band index and fraction of S3.5; the HUD, MFDs, cockpit art and lamps unchanged; rendering only (detection and the sim untouched); off and `--classic` = the original night | O | M | |
@@ -183,6 +182,11 @@ Several bugs in one message; one session then fixes them in a batch.
 
 ## Decisions
 (Settled answers from U3 go here, dated.)
+- 2026-10-21, wider view per view (refines 2026-10-19): the extended viewing area applies ONLY to the **first cockpit
+  view** (front cockpit, instrument panel at the bottom) and **all external views** (full-screen 3D, outside, chase, own
+  aircraft). The **second cockpit view** is not extended: its window-frame art does not reach further up, so like every
+  other view with cabin elements (left/right/rear) the whole picture is only scaled up to the higher resolution (fit
+  the window height, Q1).
 - 2026-10-20, DESIGN.md Q2: dither stays **grid** (the default). S2.3 found that no original colour table uses a two-colour or
   stipple fill in the golden scenes, so the choice has no visible effect in normal play; `--dither fine` stays as an option.
 - 2026-10-20, user request: a "True night" launcher toggle (S3.6) that significantly darkens the night sky and ground
