@@ -219,6 +219,18 @@ if(Python3_Interpreter_FOUND)
     set_tests_properties(enh_sandbox_hash PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 900 PASS_REGULAR_EXPRESSION "enh_sandbox_hash OK")
 endif()
 
+# ENH: S3.4, the wider view. enh_wide_geometry: the placement of every view for 16:9, 21:9, 32:9, 4:3, 16:10, tall and small windows (no game files needed):
+# the first cockpit view and the outside views extended (frame bottom centre, viewport = canvas), the second cockpit view and left / right / rear not (frame centred).
+# r3d_hr_wide_realpath (port/notes/e34/wide_realpath.py): the scripted chain with a view sweep at 16:9 and 21:9, per view what the presented canvas shows
+# (By hand: add `--png work/e34` for wide_<aspect>_<view>.png and contact_wide.png.) The sandbox hash test above has a --wide run (the sim unchanged).
+add_test(NAME enh_wide_geometry COMMAND f117 --wide-geometry-test)
+set_tests_properties(enh_wide_geometry PROPERTIES PASS_REGULAR_EXPRESSION "wide-geometry OK")
+if(Python3_Interpreter_FOUND)
+    add_test(NAME r3d_hr_wide_realpath COMMAND Python3::Interpreter ${CMAKE_CURRENT_SOURCE_DIR}/../port/notes/e34/wide_realpath.py
+             $<TARGET_FILE:f117> ${CMAKE_CURRENT_SOURCE_DIR}/../Game ${CMAKE_CURRENT_BINARY_DIR}/r3d_hr_wide_realpath)
+    set_tests_properties(r3d_hr_wide_realpath PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 900 PASS_REGULAR_EXPRESSION "wide-realpath OK")
+endif()
+
 # ENH: every faithful test runs with the enhancements off (F117_CLASSIC acts as --classic for the Python drivers' own command lines).
 get_property(F117_ALL_TESTS DIRECTORY PROPERTY TESTS)
 foreach(t ${F117_ALL_TESTS})

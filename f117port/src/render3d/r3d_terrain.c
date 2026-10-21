@@ -2,6 +2,7 @@
  * the terrain walk 04DA, the map-MFD terrain 119C / 11F2 / 1353 / 13AC / 13E3, the scenery collision probe 0FFB / 77D9 and the site / unit helpers BC12 / BCD7. */
 #include "render3d/r3d.h"
 #include "sim/sim.h"
+#include "enhanced/wide.h"   /* ENH: S3.4 */
 
 static inline s16 abs16(s16 v) { return (s16)(v < 0 ? (u16)-(u16)v : (u16)v); }
 
@@ -60,14 +61,21 @@ void r3d_draw_terrain(s16 a1, s16 pitch, s32 x, s32 y, s32 z)
         DSW(0x94DA) = (u16)u < 2 ? 2 : (u16)u;
         for (int i = 0;; i++) {
             bool pathA = L == 4 && DSS(0x98DE) >= 2;
+            s16 ox, oy;
+            int ii = i;                                                       /* ENH: S3.4, the index the "i < 4" tests see */
+            if (enh_wide_on) {                                                /* ENH: S3.4, the wide cell list in a wide display pass */
+                ii = enh_wide_cell(pathA, pitch, (int)oct, i, &ox, &oy);
+                if (ii < 0) break;
+                if (!pathA && L != 4 && DSS(0x98DE) < 2 && ii < 4) continue;
+            } else {
             if (pathA) { if (i == 15) break; }
             else {
                 if (i == 9) break;
                 if (L != 4 && DSS(0x98DE) < 2 && i < 4) continue;
             }
-            s16 ox, oy;
             if (!pathA && pitch < (s16)0xD555) { ox = DSS((u16)(0x04CC + 2 * i)); oy = DSS((u16)(0x04DE + 2 * i)); }
             else { ox = DSS((u16)(0x034C + 2 * (oct * 9 + i))); oy = DSS((u16)(0x034C + 2 * (((oct + 2) & 7) * 9 + i))); }
+            }
             DSW(0x94D6) = (u16)(fx - (u16)(ox << 12) - 0x800);
             DSW(0x94D8) = (u16)(fy - (u16)(oy << 12) - 0x800);
             if (pathA) {
@@ -79,7 +87,7 @@ void r3d_draw_terrain(s16 a1, s16 pitch, s32 x, s32 y, s32 z)
             u16 tile = terr_tile_type(L, tx, ty);
             if (tile == 0xFFFF) continue;
             u16 idx = (u16)(L * 32 + tile);
-            if (i < 4 && !near_) {
+            if (ii < 4 && !near_) {                                           /* ENH: S3.4, ii (= i but in a wide pass) */
                 if (L == 4) {
                     u16 p = DSW((u16)(0xE304 + 2 * idx));
                     DSW(0xE44A) = p;

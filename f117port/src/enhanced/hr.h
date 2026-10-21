@@ -28,7 +28,16 @@ typedef struct HrCtx {
     s32 exmax, eymax;             /* the 1001 XMAX / YMAX: N W - 1, N H - 1 */
     int line_w, line_o;           /* line brush: max(1, N/2) pixels, offset (N - w) / 2 (DESIGN 2.4, Q3) */
     bool fine;                    /* --dither fine */
+    /* S3.4, a wide main pass (wide.h): the clip window xmin..ymax and the 1001 window (ox, oy, exmax, eymax) are the canvas; wx, wy = the layer pixel of the
+     * original window's frame pixel (x0, y0) (the origin the R1 "fits s16" tests and the sprite placement use; = xmin, ymin otherwise); e2dx, e2dy = what moves the
+     * 1001 window-relative points of the original window into the canvas window; the hole (the frame below the 3D window, where the panel is) is never written */
+    bool wide, hole;
+    s32 wx, wy, e2dx, e2dy;
+    s32 hole_x0, hole_x1, hole_y;
 } HrCtx;
+
+/* S3.4: the panel hole of a wide main pass */
+#define HR_IN_HOLE(x, y) (enh_hr.hole && (y) >= enh_hr.hole_y && (x) >= enh_hr.hole_x0 && (x) <= enh_hr.hole_x1)
 
 extern HrCtx enh_hr;
 
@@ -109,7 +118,8 @@ static inline bool hr_fits16(s64 v, int n) { return v >= -32768LL * n && v <= 32
  * 0 B xmin ymin xmax ymax keep (a pass opens; layer px; keep = 1: it continues the previous pass, S3.2)   1 E x0 y0 x1 y1 (a clipped edge entering the DDA)   2 W a b x (a wall)
  * 3 F colour (the polygon of the E / W since the last F is filled)   4 L x0 y0 x1 y1 colour w o (a line, brush w at offset o)
  * 5 Q ox oy colour n x y ... (a 1001 polygon, points relative to the window origin)   6 H (hz_draw fills a half plane: not modelled)
- * 10 T x0 y0 x1 y1 (S3.2: the FLIR tint recoloured this layer rectangle through the green ramp 98h-9Fh) */
+ * 10 T x0 y0 x1 y1 (S3.2: the FLIR tint recoloured this layer rectangle through the green ramp 98h-9Fh)
+ * 14 P x0 x1 y (S3.4: the pass just opened is a wide main pass whose layer pixels x0..x1, rows y.. (the frame below the 3D window) are never written) */
 extern bool hr_tracing;
 void hr_trace(int type, int nargs, const s32 *a);
 void hr_trace_poly(s32 ox, s32 oy, u8 colour, int n, const s64 *pts);

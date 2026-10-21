@@ -5,6 +5,7 @@
 #include "sim/sim.h"
 #include "sim/sim_priv.h"
 #include "enhanced/sandbox.h"   /* ENH: S2.4 */
+#include "enhanced/wide.h"      /* ENH: S3.4 */
 
 #define LONG(o) ((s32)DSL(o))
 
@@ -124,20 +125,20 @@ int r3d_cull_core(s16 x, s16 y, s16 z)
         s16 t = (s16)(s >> 3);
         s16 sx = (s16)(s + t);
         sx = (s16)(sx + (t >> 1));
-        if (sx < abs16(Ah)) return 1;
+        if ((enh_wide_on ? enh_wide_kx(sx) : sx) < abs16(Ah)) return 1;   /* ENH: S3.4, widened in a wide display pass */
         s16 s2 = (s16)((s16)(abs16(Ch) + DSS((u16)(0x4946 + cls))) >> 2);
         s16 sy = (s16)(s2 + (s2 >> 3));
-        if (!(sy > abs16(Bh))) return 1;
+        if (!((enh_wide_on ? enh_wide_ky(sy) : sy) > abs16(Bh))) return 1;   /* ENH: S3.4 */
         d = (s16)(((s16)(sy + abs16(Bh)) >> 2) + Ch);
     } else {
         int cl = (DSB(0x294B) ^ 1) & 0x1F;
         s16 aC = abs16(Ch);
         s16 t = (s16)((s16)(aC + DSS((u16)(DSW(0xE53E) + cls))) >> cl);
         s16 sx = (s16)((t >> 2) + t);
-        if (abs16(Ah) > sx) return 1;
+        if (abs16(Ah) > (enh_wide_on ? enh_wide_kx(sx) : sx)) return 1;   /* ENH: S3.4 */
         s16 u = (s16)((s16)(aC + DSS((u16)(DSW(0xE544) + cls))) >> cl);
         s16 by = DSB(0x365E) ? (s16)((s16)((u >> 3) + u) >> 1) : u;
-        if (abs16(Bh) > by) return 1;
+        if (abs16(Bh) > (enh_wide_on ? enh_wide_ky(by) : by)) return 1;   /* ENH: S3.4 */
         d = (s16)(((s16)(abs16(Ah) + abs16(Bh)) >> 2) + aC);
     }
     DSW(0x4978) = (u16)d;

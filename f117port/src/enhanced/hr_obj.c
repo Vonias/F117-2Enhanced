@@ -17,6 +17,7 @@
 
 #include "enhanced/enh_canvas.h"
 #include "enhanced/hr.h"
+#include "enhanced/wide.h"
 #include "render3d/r3d.h"
 #include "gen/module_video.h"   /* offset_get */
 #include "video/video.h"
@@ -49,7 +50,7 @@ void hr_obj_pass_begin(void)
 
 static void put3d(s32 x, s32 y, u8 c)
 {
-    if (x < enh_hr.xmin || x > enh_hr.xmax || y < enh_hr.ymin || y > enh_hr.ymax) return;
+    if (x < enh_hr.xmin || x > enh_hr.xmax || y < enh_hr.ymin || y > enh_hr.ymax || HR_IN_HOLE(x, y)) return;   /* S3.4: the hole */
     enh_hr.layer[(size_t)y * enh_hr.lw + x] = (u16)(0x100 | c);
 }
 
@@ -113,7 +114,7 @@ void enh_tv_sprite_pending(u16 rec, int size)
     s32 x = 0, y = 0;
     hr_edge_point(rec, &x, &y);
     pend.valid = true;
-    pend.x = x - enh_hr.xmin + enh_hr.fx; pend.y = y - enh_hr.ymin + enh_hr.fy;
+    pend.x = x - enh_hr.wx + enh_hr.fx; pend.y = y - enh_hr.wy + enh_hr.fy;
     pend.size = (s32)size * enh_cv.n;
 }
 
@@ -154,7 +155,7 @@ void enh_sprite_end(u16 off, u16 seg, int size)
         si = (u16)(si + rd16(seg, si) + 4);
     }
     /* the origin: the window's layer origin + the hr point - half the size (the 1x call is x - size / 2, y - dh / 2 inside the window) */
-    const s32 x0 = sp_cur.x + (enh_hr.xmin - enh_hr.fx) - dw / 2, y0 = sp_cur.y + (enh_hr.ymin - enh_hr.fy) - dh / 2;
+    const s32 x0 = sp_cur.x + (enh_hr.wx - enh_hr.fx) - dw / 2, y0 = sp_cur.y + (enh_hr.wy - enh_hr.fy) - dh / 2;   /* S3.4: wx, wy (= xmin, ymin but in a wide pass) */
     static u8 rowbuf[0x400];
     long px = 0;
     if (hr_tracing) {                                 /* 7: x0 y0 dw dh sw sh and the source bitmap (sw sh words), for the reference */
@@ -304,16 +305,20 @@ static void vbres(s32 x1, s32 y1, s32 x2, s32 y2, u8 c, s32 wx0, s32 wy0, s32 wx
     }
 }
 
-/* One segment of an outline, in layer pixels, clipped to the 1x window [wxmin, wxmax] x [wymin, wymax] (frame pixels) */
-static void vseg(s32 x0, s32 y0, s32 x1, s32 y1, u8 c, int wxmin, int wxmax, int wymin, int wymax)
+/* One segment of an outline, in layer pixels, clipped to the layer window [ox, wx1] x [oy, wy1] */
+static void vseg_layer(s32 x0, s32 y0, s32 x1, s32 y1, u8 c, s32 ox, s32 oy, s32 wx1, s32 wy1)
 {
-    const int n = enh_cv.n;
-    const s32 ox = enh_cv.fx + n * wxmin, oy = enh_cv.fy + n * wymin;
-    const s32 wx1 = enh_cv.fx + n * (wxmax + 1) - 1, wy1 = enh_cv.fy + n * (wymax + 1) - 1;
     s64 ax = x0 - ox, ay = y0 - oy, bx = x1 - ox, by = y1 - oy;
     if (!clip_line(&ax, &ay, &bx, &by, wx1 - ox, wy1 - oy)) return;
     if (hr_tracing) { s32 t[11] = { (s32)(ax + ox), (s32)(ay + oy), (s32)(bx + ox), (s32)(by + oy), c, vl_w, vl_o, ox, oy, wx1, wy1 }; hr_trace(9, 11, t); }   /* 9: a clipped vector line + its window */
     vbres((s32)(ax + ox), (s32)(ay + oy), (s32)(bx + ox), (s32)(by + oy), c, ox, oy, wx1, wy1);
+}
+
+/* ... clipped to the 1x window [wxmin, wxmax] x [wymin, wymax] (frame pixels) */
+static void vseg(s32 x0, s32 y0, s32 x1, s32 y1, u8 c, int wxmin, int wxmax, int wymin, int wymax)
+{
+    const int n = enh_cv.n;
+    vseg_layer(x0, y0, x1, y1, c, enh_cv.fx + n * wxmin, enh_cv.fy + n * wymin, enh_cv.fx + n * (wxmax + 1) - 1, enh_cv.fy + n * (wymax + 1) - 1);
 }
 
 static void vec_hold_begin(void)
@@ -346,7 +351,9 @@ void enh_tracer_end(int colour)
     if (!vec_active) return;
     vec_hold_end();
     const TextCtx *c = (const TextCtx *)DSP(DSW(0x3FE2));    /* hud_line_view's window: ctx0 */
-    vseg(enh_hr_pt.x, enh_hr_pt.y, tracer0.x, tracer0.y, (u8)colour, c->xmin, c->xmax, c->ymin, c->ymax);
+    if (enh_hr.wide && enh_wide_pt)                          /* S3.4: in a wide pass the tracer is clipped to the canvas (the compositor takes the pass's vector layer outside the frame only) */
+        vseg_layer(enh_hr_pt.x, enh_hr_pt.y, tracer0.x, tracer0.y, (u8)colour, 0, 0, enh_cv.lw - 1, enh_cv.lh - 1);
+    else vseg(enh_hr_pt.x, enh_hr_pt.y, tracer0.x, tracer0.y, (u8)colour, c->xmin, c->xmax, c->ymin, c->ymax);
     st.lines++;
 }
 

@@ -116,6 +116,8 @@ bool host_init(const HostConfig *cfg)
     frame_reserve(HOST_FRAME_MAX_W, HOST_FRAME_MAX_H);
     nominal_w = 320 * (cfg->scale < 1 ? 3 : cfg->scale);
     nominal_h = (aspect43 ? 240 : 200) * (cfg->scale < 1 ? 3 : cfg->scale);
+    { const char *w = SDL_getenv("F117_WINDOW"); int ww, wh;   /* ENH: S3.4 test aid, the window size a headless run pretends to have (WxH) */
+      if (w && SDL_sscanf(w, "%dx%d", &ww, &wh) == 2 && ww >= 320 && wh >= 200 && ww <= 8192 && wh <= 8192) { nominal_w = ww; nominal_h = wh; } }
     { const char *v = SDL_getenv("F117_VCLOCK"); vclock = v && *v && *v != '0'; }   /* ENH: S2.4 */
     clock_start_ns = clk_ns();
     ticks_run = 0;

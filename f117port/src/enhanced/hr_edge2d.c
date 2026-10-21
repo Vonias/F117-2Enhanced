@@ -211,7 +211,7 @@ static void e2_edge_to_tables(void)
 static void fill(u8 c)
 {
     if (dlo == IDLE_LO || dlo < 0) return;
-    const s64 last = (s64)N * 0x140 - 1;
+    const s64 last = enh_hr.wide ? XMAX : (s64)N * 0x140 - 1;          /* S3.4: in a wide pass the quirk's column 13Fh is the canvas edge */
     s32 y = dhi;
     do {
         if (y >= 0 && y < trows) {
@@ -272,7 +272,7 @@ static void band_points_hr(s16 t, s64 out[4])
         e[3] = ((Si2 - Di2) >> 2) - Si2 + (s64)n * h2 + Di2;
         for (int k = 0; k < 4; k++) {
             if (pass == 0) out[k] = e[k] == v[k] ? 0 : 1;        /* 1 = the 1x value wrapped somewhere */
-            else out[k] = out[k] ? (s64)N * v[k] : e[k];
+            else out[k] = (out[k] ? (s64)N * v[k] : e[k]) + ((k & 1) ? enh_hr.e2dy : enh_hr.e2dx);   /* S3.4: into the wide window (0 otherwise) */
         }
     }
 }
@@ -310,9 +310,15 @@ static void hz_draw_hr(void)
     if (z) H = (z & 0x1F) < 16 ? (u16)(H << (z & 0x1F)) : 0;
     if (DSB(0x294B)) H = (u16)((s16)H >> 1);
     u16 w2 = DSW(0x0D1E), h2 = DSW(0x0D20);
+    s16 half = (s16)(w2 << 1);                           /* the half length of the horizon line: 2 w2 */
+    if (enh_hr.wide) {                                   /* S3.4: at least the canvas half diagonal (1x px) around the centre, so the line spans the canvas */
+        s32 ax = enh_hr.cx > enh_hr.lw - enh_hr.cx ? enh_hr.cx : enh_hr.lw - enh_hr.cx, ay = enh_hr.cy > enh_hr.lh - enh_hr.cy ? enh_hr.cy : enh_hr.lh - enh_hr.cy;
+        s32 need = (ax + ay) / N + 2;
+        if (need > half) half = (s16)(need < 0x3000 ? need : 0x3000);
+    }
     /* the 1x points exactly as edge2d.c hz_draw */
-    u32 P1 = (u32)((s32)(s16)H * (s16)nsC) << 1, P2 = (u32)((s32)(s16)(w2 << 1) * cC) << 1;
-    u32 Q1 = (u32)((s32)(s16)H * cC) << 1, Q2 = (u32)((s32)(s16)(w2 << 1) * (s16)nsC) << 1;
+    u32 P1 = (u32)((s32)(s16)H * (s16)nsC) << 1, P2 = (u32)((s32)half * cC) << 1;
+    u32 Q1 = (u32)((s32)(s16)H * cC) << 1, Q2 = (u32)((s32)half * (s16)nsC) << 1;
     s16 v[4];
     v[0] = (s16)(u16)(hz_rnd(P2 - P1) + w2);
     v[2] = (s16)(u16)(w2 - hz_rnd(P1 + P2));
@@ -321,8 +327,8 @@ static void hz_draw_hr(void)
     u16 s = hz_rnd(Q1 + Q2);
     v[1] = (s16)(u16)(h2 - (u16)(s - (u16)((s16)s >> 2)));
     /* exact at 1x and at N x */
-    s64 p1 = (s64)(s16)H * (s16)nsC * 2, p2 = (s64)(s16)(w2 << 1) * cC * 2;
-    s64 q1 = (s64)(s16)H * cC * 2, q2 = (s64)(s16)(w2 << 1) * (s16)nsC * 2;
+    s64 p1 = (s64)(s16)H * (s16)nsC * 2, p2 = (s64)half * cC * 2;
+    s64 q1 = (s64)(s16)H * cC * 2, q2 = (s64)half * (s16)nsC * 2;
     s64 pt[4];
     for (int pass = 0; pass < 2; pass++) {
         int n = pass ? N : 1;
@@ -333,7 +339,7 @@ static void hz_draw_hr(void)
         e[1] = (s64)n * (s16)h2 - (ss - (ss >> 2));
         for (int k = 0; k < 4; k++) {
             if (pass == 0) pt[k] = e[k] == v[k] ? 0 : 1;
-            else pt[k] = pt[k] ? (s64)N * v[k] : e[k];
+            else pt[k] = (pt[k] ? (s64)N * v[k] : e[k]) + ((k & 1) ? enh_hr.e2dy : enh_hr.e2dx);   /* S3.4 */
         }
     }
     u8 colour = DSB(0x0D46);

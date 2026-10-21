@@ -9,6 +9,7 @@
 #include "sim/sim_stubs.h"
 #include "enhanced/enh_canvas.h"   /* ENH: */
 #include "enhanced/hr.h"           /* ENH: */
+#include "enhanced/wide.h"         /* ENH: S3.4 */
 
 #define LONG(o) ((s32)DSL(o))
 
@@ -50,7 +51,7 @@ void r3d_project_point(int x_u, int y_u, int z)
     if (Z >= 0) { DSW(0x49E0) = 0xFFFF; return; }
     if (DSB(0x294B) != 0) { X >>= 1; Y >>= 1; }
     s32 nz = (s32)(0u - (u32)Z);
-    if (!(X <= nz) || !(Z <= X)) { DSW(0x49E0) = 0xFFFF; return; }
+    if (enh_wide_pt ? !enh_wide_xfield(X, nz) : (!(X <= nz) || !(Z <= X))) { DSW(0x49E0) = 0xFFFF; return; }   /* ENH: S3.4, the extended field in a wide pass */
     s16 sx = (s16)((s16)(s32)(((s64)(s32)((u32)X << 8)) / Z) + 0xA0);
     s16 sy = (s16)(s32)(((s64)(s32)((u32)Y << 8)) / Z);
     sy = (s16)(sy - (sy >> 2));
@@ -58,9 +59,10 @@ void r3d_project_point(int x_u, int y_u, int z)
     else sy = (s16)(sy + 0x64);
     DSW(0x49E8) = (u16)sy;
     DSW(0xDE92) = (u16)(s16)(Z >> 3);
-    if (sx < 0 || sx > 0x13F) { DSW(0x9500) = (u16)sx; sx = (s16)0xFFFF; }
-    int lim = DSW(0x365E) == 0 ? 0xC7 : 0x60;
-    if (sy < 0 || sy > lim) { DSW(0x9500) = (u16)sx; sx = (s16)0xFFFF; }
+    int xlo = 0, xhi = 0x13F, ylo = 0, lim = DSW(0x365E) == 0 ? 0xC7 : 0x60;
+    if (enh_wide_pt) { enh_wide_range(&xlo, &xhi, &ylo, &lim); if (sx == -1) sx = -2; }   /* ENH: S3.4, the canvas range; -1 stays the "not visible" sentinel */
+    if (sx < xlo || sx > xhi) { DSW(0x9500) = (u16)sx; sx = (s16)0xFFFF; }
+    if (sy < ylo || sy > lim) { DSW(0x9500) = (u16)sx; sx = (s16)0xFFFF; }
     DSW(0x49E0) = (u16)sx;
     if (enh_shadow_on) hr_project_point(X, Y, Z, sx != (s16)0xFFFF);   /* ENH: the hr point (S3.1 emitters) */
 }
@@ -217,6 +219,7 @@ void obj_overlay_frame(void)
     }
 
     /* ---- S2: the cannon tracers */
+    if (enh_shadow_on) enh_wide_ovl(true);   /* ENH: S3.4, tracers and the explosion in the canvas range of a wide pass */
     int sq = (s16)fx_isqrt((s16)((DSW(0x3660) + 2) << 2));
     s16 hit_scale = (s16)(sq != 0 ? 0x17A / sq : 0);
     for (int i = 0; i < (s16)(DSW(0xB16C) + 4); i++) {
@@ -317,6 +320,7 @@ void obj_overlay_frame(void)
         DSW(0x9D0C) = (u16)(DSW(0x9D0C) - (u16)lib_sign((s16)DSW(0x9D0C)));
         if (DSW(0x9D0C) == 0) DSW(0x98FE) = 0xFFFF;
     } else DSW(0x9D0E) = 0;
+    if (enh_shadow_on) enh_wide_ovl(false);   /* ENH: S3.4 */
 
     if (DSW(0x365E) == 0) return;
 

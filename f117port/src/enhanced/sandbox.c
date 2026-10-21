@@ -10,6 +10,7 @@
 #include "mem.h"
 #include "enhanced/enh_canvas.h"
 #include "enhanced/enhanced.h"
+#include "enhanced/wide.h"
 #include "gen/module_simflow.h"
 #include "gen/module_video.h"
 #include "sim/sim_priv.h"
@@ -169,13 +170,15 @@ static void hash_line(void)
 /* ---------------------------------------------------------------- hooks */
 
 static int frame_passes;
+static bool wide_due;          /* S3.4: this frame gets a wide display pass */
 
 void enh_frame_begin(void)
 {
     if (enh.sandbox_hash[0]) hash_line();
     frame_passes = 0;
     img_a.valid = false;
-    if (!enh_sandbox_on()) return;
+    wide_due = !enh_sbx && enh_wide_due();
+    if (!enh_sandbox_on() && !wide_due) return;
     static bool at_exit_set;
     if (!at_exit_set) { at_exit_set = true; if (!enh.sandbox_hash[0]) atexit(at_exit); }
     Uint64 t0 = SDL_GetTicksNS();
@@ -191,6 +194,12 @@ void enh_idle(void)
     while (frame_passes < enh.sandbox_test) {
         frame_passes++;
         enh_display_pass(frame_passes);
+    }
+    if (wide_due) {                                           /* S3.4: the frame again with the culling widened to the canvas; its picture is shown with the frame */
+        wide_due = false;
+        enh_wide_pass = true;
+        enh_display_pass(0);
+        enh_wide_pass = false;
     }
 }
 
@@ -219,6 +228,7 @@ void enh_display_pass(int v)
     Uint64 t1 = SDL_GetTicksNS();
 
     enh_sbx = true;
+    enh_wide_drawn = false;
     test_view(v);
     view_frame();                                             /* the faithful frame's render, as frame_loop_body runs it */
     hud_overlay_frame();
@@ -228,6 +238,8 @@ void enh_display_pass(int v)
         cockpit_draw_adi();
     }
     flip(DSW(0x2E34) * 160);
+    if (enh_wide_pass) enh_wide_capture();                    /* S3.4: the pass's layers (after its flip) are the pending wide picture */
+    enh_wide_on = enh_wide_pt = false;
     enh_sbx = false;
     Uint64 t2 = SDL_GetTicksNS();
 

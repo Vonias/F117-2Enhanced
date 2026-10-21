@@ -5,7 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-EnhOptions enh = { .canvas = true };
+EnhOptions enh = { .canvas = true, .wide = true };   /* S3.4: the wider view is on by default (S2.1 note: "the default turns on with S3.4") */
 
 /* F117_CLASSIC=1 in the environment acts as --classic: the faithful ctests set it, because their Python drivers start the program with
  * their own command lines. */
@@ -23,7 +23,7 @@ int enh_parse_arg(int argc, char **argv, int i)
 {
     if (!strcmp(argv[i], "--classic")) {              /* every enhancement off, whatever else is on the command line */
         enh.classic = true; enh.canvas = false; enh.wide = false; enh.render_scale = 0; enh.dither_fine = false; enh.hr_check = false; enh.hr_dump[0] = 0;
-        enh.sandbox_test = 0;
+        enh.sandbox_test = 0; enh.wide_test_w = enh.wide_test_h = 0;
         return 1;
     }
     if (!strcmp(argv[i], "--render-scale") && i + 1 < argc) {
@@ -33,7 +33,13 @@ int enh_parse_arg(int argc, char **argv, int i)
     }
     if (!strcmp(argv[i], "--wide")) { if (!enh.classic) enh.wide = true; return 1; }
     if (!strcmp(argv[i], "--no-wide")) { enh.wide = false; return 1; }
-    if (!strcmp(argv[i], "--compose-test")) { enh.compose_test = true; return 1; }
+    if (!strcmp(argv[i], "--wide-test") && i + 1 < argc) {        /* S3.4 test aid */
+        int w = 0, h = 0;
+        if (sscanf(argv[i + 1], "%dx%d", &w, &h) == 2 && w >= 320 && h >= 200 && w <= 8192 && h <= 8192 && !enh.classic) { enh.wide_test_w = w; enh.wide_test_h = h; enh.wide = true; }
+        return 2;
+    }
+    if (!strcmp(argv[i], "--compose-test")) { enh.compose_test = 1; return 1; }
+    if (!strcmp(argv[i], "--wide-geometry-test")) { enh.compose_test = 2; return 1; }
     if (!strcmp(argv[i], "--dither") && i + 1 < argc) {
         if (!strcmp(argv[i + 1], "fine")) enh.dither_fine = !enh.classic;
         else if (!strcmp(argv[i + 1], "grid")) enh.dither_fine = false;

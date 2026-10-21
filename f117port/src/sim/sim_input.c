@@ -5,6 +5,7 @@
 
 #include "sim/sim.h"
 #include "sim/sim_priv.h"
+#include "enhanced/enh_canvas.h"   /* ENH: S3.4 */
 
 /* ------------------------------------------------------------------------------------------------------ keypad as stick */
 
@@ -97,6 +98,7 @@ void sim_pause_wait(void)
 void sim_quit_requester(void)
 {
     u16 save = DSW(0x2646);
+    if (enh_shadow_on) enh_menu(true);   /* ENH: S3.4, a menu screen: pillarboxed */
     screen_off();
     pal_save();
     blit_rect(0, 0, 0, 1, 0, 0, 320, 200);
@@ -117,14 +119,17 @@ void sim_quit_requester(void)
     }
     snd_engine_refresh();
     DSW(0x2646) = save;
+    if (enh_shadow_on) enh_menu(false);   /* ENH: S3.4 */
 }
 
 /* the Alt-B boss screen of 1E9E (2110): the lower panel saved to the clean page 2, both display pages black, pause, the panel back; the caller redraws the throttle digits */
 void sim_boss_screen(void)
 {
+    if (enh_shadow_on) enh_menu(true);   /* ENH: S3.4 */
     if (DSW(0x365E)) blit_rect(0, 0, 91, 2, 0, 91, 320, 109);
     gfx_set_fg(0);
     hud_fill_rect(0, 0, 319, 199);
     sim_pause_wait();
     if (DSW(0x365E)) gfx_restore_rect(0, 91, 320, 109);
+    if (enh_shadow_on) enh_menu(false);   /* ENH: S3.4 */
 }

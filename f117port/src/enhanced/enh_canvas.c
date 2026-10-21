@@ -8,6 +8,8 @@
 #include "enhanced/enhanced.h"
 #include "enhanced/hr.h"
 #include "enhanced/sandbox.h"
+#include "enhanced/wide.h"
+#include "mem.h"
 #include "render3d/r3d.h"
 #include "platform/vga.h"
 #include "video/video.h"
@@ -32,6 +34,8 @@ int enh_vec_hold;     /* S3.1: > 0 = the 1x line()/put_pixel writes are an hr em
 
 static bool active;
 static EnhView view = ENH_VIEW_MENU;
+static bool menu_on;                     /* S3.4: a VGAME menu screen is up (enh_menu) */
+static EnhView menu_saved;
 
 static Shadow sh_buf[2][PAGE_PIXELS];
 static Shadow *sh_work = sh_buf[0], *sh_shown = sh_buf[1];  /* pointers, so a display pass can swap them (S2.4, enh_canvas_snap_swap) */
@@ -55,7 +59,8 @@ void enh_canvas_geometry(EnhCanvas *c, EnhView v, int win_w, int win_h, bool asp
         c->vx = c->vy = 0; c->vw = c->lw; c->vh = c->lh;
         return;
     }
-    int n = fixed_n > 0 && fixed_n < fit ? fixed_n : fit;      /* wide: never larger than the window holds */
+    int n = fixed_n > 0 ? fixed_n : fit;                       /* S3.4: a fixed scale is kept, as without wide (the canvas then holds at least the frame) */
+    if (n > MAX_SIDE / 320) n = MAX_SIDE / 320;
     if (lw < 320 * n) lw = 320 * n;
     if (lh < 200 * n) lh = 200 * n;
     if (lw > MAX_SIDE) lw = MAX_SIDE;
@@ -75,14 +80,35 @@ void enh_canvas_set_active(bool on)
     active = on;
     enh_shadow_on = on && enh_canvas_on();
     view = ENH_VIEW_MENU;                        /* a mode set starts a new program: the menu placement */
+    menu_on = false;
     enh_route = ENH_ROUTE_ART;
+}
+
+/* S3.4 (Decisions 2026-10-21): the first cockpit view (view 0, [294B] = 0) and the outside views are extended; the second cockpit view (view 0 with [294B] = 1: the
+ * key C small view, whose window-frame struts hud_side_strips keys over rows 0..90 from the top of 256PIT.PIC) and the looking-out views 0x41..0x43 are the whole
+ * picture fitted and centred (DESIGN 3.2). */
+EnhView enh_view_class(int m, int style)
+{
+    if (m == 0) return style ? ENH_VIEW_FIT : ENH_VIEW_FRONT;
+    if (m >= 0x41 && m <= 0x43) return ENH_VIEW_FIT;
+    return ENH_VIEW_FULL;
 }
 
 void enh_set_view(int m)
 {
-    if (m == 0) view = ENH_VIEW_FRONT;
-    else if (m >= 0x41 && m <= 0x43) view = ENH_VIEW_FIT;
-    else view = ENH_VIEW_FULL;
+    view = enh_view_class(m, m == 0 ? DSB(0x294B) : 0);
+}
+
+/* S3.4: VGAME's own full-screen screens (the quit requester, the boss screen) are menus: pillarboxed, no extended world; the view comes back after them */
+void enh_menu(bool on)
+{
+    if (on && !menu_on) { menu_saved = view; view = ENH_VIEW_MENU; menu_on = true; }
+    else if (!on && menu_on) { view = menu_saved; menu_on = false; }
+}
+
+bool enh_canvas_extended(void)
+{
+    return (view == ENH_VIEW_FRONT || view == ENH_VIEW_FULL) && (enh_cv.vw > 320 * enh_cv.n || enh_cv.vh > 200 * enh_cv.n);
 }
 
 EnhView enh_view_get(void) { return view; }
@@ -109,9 +135,14 @@ static void layers_alloc(void)
 u16 *enh_layer3d(void) { return l3d_work; }
 u16 *enh_layer_vec(void) { return lvec_work; }
 
+/* S3.4: the render test fixes the window (320N x 200N, or the --wide-test size), so the host's window (a headless run's nominal one) cannot move the canvas mid-scene */
+static int test_win_w, test_win_h;
+void enh_canvas_test_window(int w, int h) { test_win_w = w; test_win_h = h; }
+
 bool enh_canvas_update(int win_w, int win_h, bool aspect43)
 {
     EnhCanvas c;
+    if (test_win_w > 0) { win_w = test_win_w; win_h = test_win_h; aspect43 = false; }
     enh_canvas_geometry(&c, view, win_w, win_h, aspect43, enh.render_scale, enh.wide);
     if (!memcmp(&c, &enh_cv, sizeof c) && layer_px) return false;
     bool resized = c.lw != enh_cv.lw || c.lh != enh_cv.lh;
@@ -280,9 +311,55 @@ void enh_page_cleared(u16 seg)
 
 static void probe_flip(void);
 
+/* ---------------------------------------------------------------- the wide picture (S3.4) */
+
+/* The 3D layer (whole canvas) and the vector layer (used outside the frame) of the last wide display pass, as its flip left them. [0] = pending (the pass of the
+ * frame being drawn), [1] = current (the frame on screen): the live flip of the canonical frame makes the pending one current. */
+typedef struct { bool valid; EnhCanvas cv; int x0, y0, x1, y1; u16 *l3, *lv; size_t cap; } Held;
+static Held held[2];
+
+void enh_wide_capture(void)
+{
+    Held *h = &held[0];
+    h->valid = false;
+    if (!layer_px || !enh_wide_drawn) return;
+    if (h->cap < layer_px) {
+        free(h->l3); free(h->lv);
+        h->l3 = malloc(layer_px * sizeof(u16)); h->lv = malloc(layer_px * sizeof(u16));
+        h->cap = h->l3 && h->lv ? layer_px : 0;
+        if (!h->cap) { free(h->l3); free(h->lv); h->l3 = h->lv = NULL; return; }
+    }
+    memcpy(h->l3, l3d_shown, layer_px * sizeof(u16));
+    memcpy(h->lv, lvec_shown, layer_px * sizeof(u16));
+    h->cv = enh_cv;
+    h->x0 = enh_wide_win[0]; h->y0 = enh_wide_win[1]; h->x1 = enh_wide_win[2]; h->y1 = enh_wide_win[3];
+    h->valid = true;
+}
+
+static void held_promote(void)
+{
+    if (held[0].valid) { Held t = held[1]; held[1] = held[0]; held[0] = t; held[0].valid = false; }
+    else held[1].valid = false;
+}
+
+/* the extended area outside the frame is cleared when a wide main pass opens (the frame's own rectangles are cleared by enh_pass_clear) */
+void enh_wide_clear_outside(void)
+{
+    if (!layer_px) return;
+    const int n = enh_cv.n, lw = enh_cv.lw, fx = enh_cv.fx, fy = enh_cv.fy;
+    for (int y = 0; y < enh_cv.lh; y++) {
+        u16 *a = l3d_work + (size_t)y * lw, *b = lvec_work + (size_t)y * lw;
+        if (y < fy || y >= fy + 200 * n) { memset(a, 0, (size_t)lw * sizeof(u16)); memset(b, 0, (size_t)lw * sizeof(u16)); continue; }
+        memset(a, 0, (size_t)fx * sizeof(u16)); memset(b, 0, (size_t)fx * sizeof(u16));
+        const int r = fx + 320 * n;
+        memset(a + r, 0, (size_t)(lw - r) * sizeof(u16)); memset(b + r, 0, (size_t)(lw - r) * sizeof(u16));
+    }
+}
+
 void enh_flip(unsigned bytes)
 {
     size_t n = bytes < PAGE_PIXELS ? bytes : PAGE_PIXELS;
+    if (!enh_sbx) held_promote();                                    /* S3.4: the wide picture of this frame goes on screen with it */
     memcpy(sh_shown, sh_work, n * sizeof(Shadow));
     if (layer_px) {
         memcpy(l3d_shown, l3d_work, layer_px * sizeof(u16));
@@ -294,43 +371,56 @@ void enh_flip(unsigned bytes)
 /* ---------------------------------------------------------------- compose (2.5) */
 
 /* idx/sidx: the shown 320x200 page and the page offset of each pixel (0xFFFF = none); pal: the live DAC as XRGB. */
-typedef struct { const Shadow *sh; const u16 *l3, *lv; } ComposeSrc;   /* the shadow plane and the 3D / vector layers being composed */
+/* the shadow plane and the 3D / vector layers being composed; S3.4: l3h / lvh = the wide picture (held): its 3D layer inside the frame rectangle hx0..hx1, hy0..hy1
+ * (frame px: the 3D window of its main pass) and everywhere outside the frame, its vector layer outside the frame; cls (test aid): per canvas pixel what it shows */
+typedef struct { const Shadow *sh; const u16 *l3, *lv; const u16 *l3h, *lvh; int hx0, hy0, hx1, hy1; u8 *cls; } ComposeSrc;
+enum { CLS_BLACK, CLS_ART, CLS_WORLD, CLS_VEC, CLS_WORLD1 };   /* nothing / a page pixel (art, text, panel) / a 3D layer pixel / a vector layer pixel / a 3D record shown as its 1x pixel */
 
 static void compose_canvas(u32 *out, const u8 *idx, const u16 *sidx, const u32 *pal, bool screen, const ComposeSrc *cs)
 {
     const Shadow *sh_shown = cs->sh;
     const u16 *l3d_shown = cs->l3, *lvec_shown = cs->lv;
     const int lw = enh_cv.lw, lh = enh_cv.lh, n = enh_cv.n, fx = enh_cv.fx, fy = enh_cv.fy;
+    u8 *const cls = cs->cls;
     memset(out, 0, (size_t)lw * (size_t)lh * sizeof(u32));
+    if (cls) memset(cls, CLS_BLACK, (size_t)lw * (size_t)lh);
     if (!screen) return;
     const bool layers = layer_px != 0;
-    if (layers && (enh_cv.vw > 320 * n || enh_cv.vh > 200 * n)) {    /* the extended area: the 3D layer around the frame */
+    if (layers && (enh_cv.vw > 320 * n || enh_cv.vh > 200 * n)) {    /* the extended area: the 3D layer around the frame (S3.4: the wide picture's, vector layer on top) */
+        const u16 *ext3 = cs->l3h ? cs->l3h : l3d_shown;
         for (int y = 0; y < lh; y++) {
             u32 *o = out + (size_t)y * lw;
-            const u16 *l = l3d_shown + (size_t)y * lw;
+            const u16 *l = ext3 + (size_t)y * lw, *v = cs->lvh ? cs->lvh + (size_t)y * lw : NULL;
+            u8 *c = cls ? cls + (size_t)y * lw : NULL;
             bool in_rows = y >= fy && y < fy + 200 * n;
             for (int x = 0; x < lw; x++) {
                 if (in_rows && x >= fx && x < fx + 320 * n) { x = fx + 320 * n - 1; continue; }
-                if (l[x] & 0x100) o[x] = pal[l[x] & 255];
+                if (v && (v[x] & 0x100)) { o[x] = pal[v[x] & 255]; if (c) c[x] = CLS_VEC; }
+                else if (l[x] & 0x100) { o[x] = pal[l[x] & 255]; if (c) c[x] = CLS_WORLD; }
             }
         }
     }
     for (int y = 0; y < 200; y++) {
+        const bool hrow = cs->l3h && y >= cs->hy0 && y <= cs->hy1;
         for (int ky = 0; ky < n; ky++) {
             u32 *o = out + (size_t)(fy + y * n + ky) * lw + fx;
+            u8 *co = cls ? cls + (size_t)(fy + y * n + ky) * lw + fx : NULL;
             for (int x = 0; x < 320; x++, o += n) {
                 const u8 v = idx[y * 320 + x];
                 const u16 si = sidx[y * 320 + x];
                 const Shadow *r = si < PAGE_PIXELS ? &sh_shown[si] : NULL;
                 if (!layers || !r || r->src == SRC_NONE || r->val != v) {
                     for (int kx = 0; kx < n; kx++) o[kx] = pal[v];
+                    if (co) memset(co + x * n, CLS_ART, (size_t)n);
                     continue;
                 }
                 const size_t at = (size_t)(fy + y * n + ky) * lw + (size_t)(fx + x * n);
+                const u16 *L3 = hrow && x >= cs->hx0 && x <= cs->hx1 ? cs->l3h : l3d_shown;
                 if (r->src == SRC_3D) {
                     for (int kx = 0; kx < n; kx++) {
-                        u16 l = l3d_shown[at + kx];
+                        u16 l = L3[at + kx];
                         o[kx] = pal[(l & 0x100) ? (l & 255) : v];
+                        if (co) co[x * n + kx] = (l & 0x100) ? CLS_WORLD : CLS_WORLD1;
                     }
                     continue;
                 }
@@ -338,14 +428,31 @@ static void compose_canvas(u32 *out, const u8 *idx, const u16 *sidx, const u32 *
                 for (int by = 0; by < n && !any; by++)
                     for (int kx = 0; kx < n; kx++)
                         if (lvec_shown[(size_t)(fy + y * n + by) * lw + (size_t)(fx + x * n + kx)] & 0x100) { any = true; break; }
-                if (!any && r->src != SRC_VECHR) { for (int kx = 0; kx < n; kx++) o[kx] = pal[v]; continue; }   /* nothing emitted: the original pixel */
+                if (!any && r->src != SRC_VECHR) {                     /* nothing emitted: the original pixel */
+                    for (int kx = 0; kx < n; kx++) o[kx] = pal[v];
+                    if (co) memset(co + x * n, CLS_VEC, (size_t)n);
+                    continue;
+                }
                 for (int kx = 0; kx < n; kx++) {
                     u16 lv = lvec_shown[at + kx];
-                    u16 l3 = l3d_shown[at + kx];
+                    u16 l3 = L3[at + kx];
                     o[kx] = (lv & 0x100) ? pal[lv & 255] : (r->under3d && (l3 & 0x100)) ? pal[l3 & 255] : pal[r->under];
+                    if (co) co[x * n + kx] = (lv & 0x100) ? CLS_VEC : (r->under3d && (l3 & 0x100)) ? CLS_WORLD : r->under3d ? CLS_WORLD1 : CLS_ART;
                 }
             }
         }
+    }
+}
+
+/* S3.4: the sources of the present path: the shown plane and layers, and the wide picture of the frame on screen when it belongs to this placement */
+static void compose_src_live(ComposeSrc *cs)
+{
+    memset(cs, 0, sizeof *cs);
+    cs->sh = sh_shown; cs->l3 = l3d_shown; cs->lv = lvec_shown;
+    const Held *h = &held[1];
+    if (h->valid && !menu_on && enh_canvas_extended() && h->cap >= layer_px && !memcmp(&h->cv, &enh_cv, sizeof enh_cv)) {
+        cs->l3h = h->l3; cs->lvh = h->lv;
+        cs->hx0 = h->x0; cs->hy0 = h->y0; cs->hx1 = h->x1; cs->hy1 = h->y1;
     }
 }
 
@@ -358,7 +465,8 @@ bool enh_compose_vga(u32 *xrgb)
     u32 pal[256];
     const size_t px = (size_t)enh_cv.lw * (size_t)enh_cv.lh;
     bool screen = vga_shown_frame(idx, sidx, pal);
-    const ComposeSrc cs = { sh_shown, l3d_shown, lvec_shown };
+    ComposeSrc cs;
+    compose_src_live(&cs);                                            /* ENH: S3.4, with the wide picture */
     compose_canvas(xrgb, idx, sidx, pal, screen, &cs);
     if (last_px == px && last && !memcmp(last, xrgb, px * sizeof(u32))) return false;
     if (last_px != px) { free(last); last = malloc(px * sizeof(u32)); last_px = last ? px : 0; }
@@ -372,7 +480,7 @@ void enh_compose_work(u32 *out, const u8 *page, const u32 *pal)
 {
     static u16 ident[PAGE_PIXELS];
     if (ident[1] == 0) for (int i = 0; i < PAGE_PIXELS; i++) ident[i] = (u16)i;
-    const ComposeSrc cs = { sh_work, l3d_work, lvec_work };
+    const ComposeSrc cs = { sh_work, l3d_work, lvec_work, NULL, NULL, 0, 0, 0, 0, NULL };
     compose_canvas(out, page, ident, pal, true, &cs);
 }
 
@@ -381,6 +489,50 @@ void enh_compose_work(u32 *out, const u8 *page, const u32 *pal)
 /* After every page flip: the pixels of the TV window (x 169..245, y 110..169) and of the map window (x 74..150, y 110..169) of the shown page that come from a 3D
  * record equal to the page (so the compositor shows the 3D layer there) against the window size; F117_PROBE_FRAMES=a,b writes the composed shown canvas of those frames
  * to PREFIX_<frame>.raw (s32 lw, lh, then lw * lh XRGB u32 as composed, then the same frame as the classic 1x page scaled N x N). */
+/* S3.4: the canvas as presented after this flip, per pixel class (compose_canvas cls): the 3D world (hr layer / 1x 3D pixel), art (page pixels), vector, black; the same
+ * outside the frame (the extended area); and the seams: of the pixel pairs across the frame border (left, right, top) where both sides show the 3D world, how many
+ * differ, against the same count across block boundaries inside the frame (columns N 80, N 160, N 240 of the frame) */
+static void probe_wide(FILE *f, const u8 *pg)
+{
+    if (!layer_px) return;
+    const int lw = enh_cv.lw, lh = enh_cv.lh, n = enh_cv.n, fx = enh_cv.fx, fy = enh_cv.fy;
+    u32 *img = malloc(layer_px * sizeof(u32));
+    u8 *cl = malloc(layer_px);
+    if (!img || !cl) { free(img); free(cl); return; }
+    static u16 ident[PAGE_PIXELS];
+    for (int i = 0; i < PAGE_PIXELS; i++) ident[i] = (u16)i;
+    u32 pal[256];
+    u8 dac[768];
+    dac_get(0, 256, dac);
+    for (int i = 0; i < 256; i++) pal[i] = (u32)dac[3 * i] << 16 | (u32)dac[3 * i + 1] << 8 | dac[3 * i + 2];
+    ComposeSrc cs;
+    compose_src_live(&cs);
+    cs.cls = cl;
+    compose_canvas(img, pg, ident, pal, true, &cs);
+    long all[5] = { 0 }, ext[5] = { 0 };
+    for (int y = 0; y < lh; y++)
+        for (int x = 0; x < lw; x++) {
+            const u8 c = cl[(size_t)y * lw + x];
+            all[c]++;
+            if (y < fy || y >= fy + 200 * n || x < fx || x >= fx + 320 * n) ext[c]++;
+        }
+    long sp[4] = { 0 }, sd[4] = { 0 };      /* left, right, top, inside reference */
+#define PAIR(k, xa, ya, xb, yb) do { const size_t a_ = (size_t)(ya) * lw + (size_t)(xa), b_ = (size_t)(yb) * lw + (size_t)(xb); \
+        if (cl[a_] == CLS_WORLD && cl[b_] == CLS_WORLD) { sp[k]++; if (img[a_] != img[b_]) sd[k]++; } } while (0)
+    for (int y = fy; y < fy + 200 * n; y++) {
+        if (fx > 0) PAIR(0, fx - 1, y, fx, y);
+        if (fx + 320 * n < lw) PAIR(1, fx + 320 * n - 1, y, fx + 320 * n, y);
+        for (int k = 1; k <= 3; k++) PAIR(3, fx + n * 80 * k - 1, y, fx + n * 80 * k, y);
+    }
+    if (fy > 0) for (int x = fx; x < fx + 320 * n; x++) PAIR(2, x, fy - 1, x, fy);
+#undef PAIR
+    fprintf(f, " lw=%d lh=%d n=%d fx=%d fy=%d vclass=%d held=%d style=%x world=%ld world1=%ld art=%ld vec=%ld black=%ld eworld=%ld eblack=%ld evec=%ld epx=%ld"
+               " seaml=%ld/%ld seamr=%ld/%ld seamt=%ld/%ld seamref=%ld/%ld", lw, lh, n, fx, fy, (int)view, cs.l3h != NULL, DSB(0x294B), all[CLS_WORLD], all[CLS_WORLD1],
+            all[CLS_ART], all[CLS_VEC], all[CLS_BLACK], ext[CLS_WORLD], ext[CLS_BLACK], ext[CLS_VEC], ext[0] + ext[1] + ext[2] + ext[3] + ext[4],
+            sd[0], sp[0], sd[1], sp[1], sd[2], sp[2], sd[3], sp[3]);
+    free(img); free(cl);
+}
+
 static void probe_flip(void)
 {
     static int frame;
@@ -420,6 +572,7 @@ static void probe_flip(void)
     fprintf(f, "frame %d tv %ld/%ld map %ld/%ld rmfd=%x lmfdoff=%x cockpit=%x view=%x p4088=%x draw=%x master=%x site=%x unit=%x hudcol=%x/%x hudlvl=%x", frame, c3[0], cn[0], c3[1], cn[1],
             DSW(0xDFDC), DSW(0xDEDA), DSW(0x365E), DSW(0xC07A), DSB(0x4088), video_draw_seg(), DSW(0xE2FE), DSW(0x3D66), DSW(0x3D64), DSB(0x2CA0), DSB(0x2CA1), DSB(0x294A));
     for (int k = 0; k < VR_N; k++) fprintf(f, " %s %ld/%ld", vname[k], vh[k], vt[k]);
+    probe_wide(f, pg);                                                /* S3.4 */
     fprintf(f, "\n");
     fflush(f);
     const char *e = getenv("F117_PROBE_FRAMES");
@@ -439,7 +592,8 @@ static void probe_flip(void)
             static u16 ident[PAGE_PIXELS];
             for (int i = 0; i < PAGE_PIXELS; i++) ident[i] = (u16)i;
             if (img) {
-                const ComposeSrc cs = { sh_shown, l3d_shown, lvec_shown };
+                ComposeSrc cs;
+                compose_src_live(&cs);                                /* S3.4: as presented, with the wide picture */
                 compose_canvas(img, pg, ident, pal, true, &cs);
                 char p[1100];
                 snprintf(p, sizeof p, "%s_%04d.raw", enh.mfd_probe, frame);
@@ -449,7 +603,7 @@ static void probe_flip(void)
                     fwrite(hd, 4, 2, o);
                     fwrite(img, 4, layer_px, o);
                     static Shadow none[PAGE_PIXELS];                       /* no records: the 1x page scaled N x N, the classic picture of the same frame */
-                    const ComposeSrc c1 = { none, l3d_shown, lvec_shown };
+                    const ComposeSrc c1 = { none, l3d_shown, lvec_shown, NULL, NULL, 0, 0, 0, 0, NULL };
                     compose_canvas(img, pg, ident, pal, true, &c1);
                     fwrite(img, 4, layer_px, o);
                     fclose(o);
@@ -469,7 +623,11 @@ static void probe_flip(void)
 void enh_vec_put(int lx, int ly, u8 c)
 {
     const int n = enh_cv.n;
-    if (!lvec_work || lx < enh_cv.fx || ly < enh_cv.fy || lx >= enh_cv.lw || ly >= enh_cv.lh) return;
+    if (!lvec_work || lx < 0 || ly < 0 || lx >= enh_cv.lw || ly >= enh_cv.lh) return;
+    if (lx < enh_cv.fx || ly < enh_cv.fy || lx >= enh_cv.fx + 320 * n || ly >= enh_cv.fy + 200 * n) {   /* outside the frame: only a wide pass draws there (S3.4) */
+        if (enh_wide_pt) lvec_work[(size_t)ly * enh_cv.lw + lx] = (u16)(0x100 | c);
+        return;
+    }
     int px = (lx - enh_cv.fx) / n, py = (ly - enh_cv.fy) / n;
     if (px > 319 || py > 199) return;
     const u16 seg = video_draw_seg(), off = (u16)(py * 320 + px);

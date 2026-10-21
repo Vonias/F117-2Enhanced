@@ -6,6 +6,7 @@
 
 #include "render3d/r3d.h"
 #include "enhanced/sandbox.h"      /* ENH: S2.4 */
+#include "enhanced/wide.h"         /* ENH: S3.4 */
 
 #define BANK()  DSW(0x8560)
 #define ESW(o)  rd16(BANK(), (u16)(o))
@@ -44,8 +45,10 @@ int r3d_frustum_test(s16 radius)
     if ((u16)((u16)(abs16(zh) + 1) << 1) >= DSW(0x7D2E)) return 0;
     s16 t = (s16)(zh + radius + zh);
     if (t < 0) return 0;
-    if ((u16)(abs32(DSSL(0x7CA2)) >> 16) > (u16)t) return 0;
-    if ((u16)(abs32(DSSL(0x7CA6)) >> 16) > (u16)t) return 0;
+    u32 tx = (u16)t, ty = (u16)t;
+    if (enh_wide_on) enh_wide_frustum(&tx, &ty);   /* ENH: S3.4, the extended half angles in a wide display pass */
+    if ((u16)(abs32(DSSL(0x7CA2)) >> 16) > tx) return 0;
+    if ((u16)(abs32(DSSL(0x7CA6)) >> 16) > ty) return 0;
     return 1;
 }
 

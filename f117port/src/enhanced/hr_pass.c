@@ -10,6 +10,7 @@
 #include "enhanced/enh_canvas.h"
 #include "enhanced/enhanced.h"
 #include "enhanced/sandbox.h"
+#include "enhanced/wide.h"
 #include "render3d/r3d.h"
 #include "video/video.h"
 
@@ -118,10 +119,18 @@ void enh_r3d_viewport(u16 vp)
 {
     (void)vp;
     if (enh_hr.on && enh.hr_check) pass_stats();             /* a pass left open (a nested begin without its end) */
+    if (enh_wide_on) enh_wide_end();                          /* S3.4: only the main pass is widened */
     enh_route = ENH_ROUTE_3D;
     enh_hr.on = false;
     const u16 seg = DSW(0x85EA);
     const int x0 = DSS(0x85CA), y0 = DSS(0x85CC), x1 = DSS(0x85CE), y1 = DSS(0x85D0);
+    const bool main_win = x0 == 0 && y0 == 0 && x1 == 319;               /* S3.4: the main 3D window of view_frame (the TV and map windows are smaller) */
+    if (enh.wide_test_w > 0 && main_win && enh_page_tracked(seg)) {        /* S3.4 test aid: the render test's scene on a wide canvas, placed for its view */
+        enh_set_view(DSW(0xC07A));
+        enh_canvas_test_window(enh.wide_test_w, enh.wide_test_h);
+        enh_canvas_update(enh.wide_test_w, enh.wide_test_h, false);
+    }
+    const bool wide = (enh_wide_pass || enh.wide_test_w > 0) && main_win && y1 <= 199 && enh_canvas_extended();
     const bool keep = continue_next && enh_hr.have && enh_hr.seg == seg && enh_hr.x0 == x0 && enh_hr.y0 == y0 && enh_hr.x1 == x1 && enh_hr.y1 == y1;   /* S3.2 */
     continue_next = false;
     enh_hr.have = false;
@@ -140,6 +149,16 @@ void enh_r3d_viewport(u16 vp)
     h->cx = h->fx + n * DSS(0x85D2); h->cy = h->fy + n * DSS(0x85D4);
     h->ox = h->xmin; h->oy = h->ymin;
     h->exmax = n * (DSS(0x2293) + 1) - 1; h->eymax = n * (DSS(0x2295) + 1) - 1;
+    h->wide = h->hole = false;
+    h->wx = h->xmin; h->wy = h->ymin; h->e2dx = h->e2dy = 0;
+    if (wide) {                                                           /* S3.4: the canvas is the window; the frame below the 3D window (the panel) is a hole */
+        h->wide = true;
+        h->xmin = 0; h->ymin = 0; h->xmax = h->lw - 1; h->ymax = h->lh - 1;
+        h->ox = 0; h->oy = 0; h->exmax = h->lw - 1; h->eymax = h->lh - 1;
+        h->e2dx = h->wx; h->e2dy = h->wy;
+        if (y1 < 199) { h->hole = true; h->hole_x0 = h->fx; h->hole_x1 = h->fx + 320 * n - 1; h->hole_y = h->fy + n * (y1 + 1); }
+        enh_wide_clear_outside();
+    }
     h->line_w = n / 2 > 1 ? n / 2 : 1;
     h->line_o = (n - h->line_w) / 2;
     h->fine = enh.dither_fine;
@@ -149,6 +168,7 @@ void enh_r3d_viewport(u16 vp)
     if (hr_tracing) {
         s32 w[5] = { h->xmin, h->ymin, h->xmax, h->ymax, keep };   /* the fifth word: the pass keeps the layer of the previous one (S3.2) */
         hr_trace(0, 5, w);
+        if (h->hole) { s32 p[3] = { h->hole_x0, h->hole_x1, h->hole_y }; hr_trace(14, 3, p); }   /* S3.4 */
         if (win_x1 < win_x0) { win_x0 = w[0]; win_y0 = w[1]; win_x1 = w[2]; win_y1 = w[3]; }
         else {
             if (w[0] < win_x0) win_x0 = w[0];
@@ -159,6 +179,7 @@ void enh_r3d_viewport(u16 vp)
     }
     hr_raster_begin();
     hr_clip_begin();
+    if (wide) enh_wide_begin();                                           /* S3.4: the widening factors of this canvas */
 }
 
 /* S3.2: the FLIR tint (C6DE) recolours the finished window x..x+w-1, y..y+h-1 (frame px) through the green ramp; the reference does the same to its expected colours */
@@ -176,6 +197,7 @@ void enh_tint_note(int x, int y, int w, int h)
 void enh_r3d_end(void)
 {
     if (enh_hr.on && enh.hr_check) pass_stats();
+    if (enh_wide_on) enh_wide_end();                                      /* S3.4 */
     enh_hr.on = false;
     enh_route = ENH_ROUTE_ART;
 }
@@ -209,6 +231,7 @@ void enh_hr_test_begin(void)
     if (!hr_check_on()) return;
     int n = enh.render_scale > 0 ? enh.render_scale : 1;
     enh_canvas_set_active(true);
+    enh_canvas_test_window(320 * n, 200 * n);                 /* S3.4: not the host's (headless) window */
     enh_canvas_update(320 * n, 200 * n, false);
     enh_layers_reset();
     enh_hr.on = false;

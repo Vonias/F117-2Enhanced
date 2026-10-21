@@ -111,7 +111,7 @@ void hr_project(u16 di, u16 bx)
 static u8 outcode16(s64 x, s64 y, bool *ovf)
 {
     u8 c = 0;
-    if (!hr_fits16(x - enh_hr.xmin, N) || !hr_fits16(y - enh_hr.ymin, N)) *ovf = true;
+    if (!hr_fits16(x - enh_hr.wx, N) || !hr_fits16(y - enh_hr.wy, N)) *ovf = true;   /* S3.4: relative to the original window (wx = xmin but in a wide pass) */
     if (x < enh_hr.xmin) c |= 4;
     if (x > enh_hr.xmax) c |= 8;
     if (y < enh_hr.ymin) c |= 1;

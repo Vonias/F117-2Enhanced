@@ -62,7 +62,7 @@ void hr_raster_begin(void)
 
 /* ---------------------------------------------------------------- layer pixels */
 
-void hr_put(s32 x, s32 y, u8 c) { enh_hr.layer[(size_t)y * enh_hr.lw + x] = (u16)(0x100 | c); }
+void hr_put(s32 x, s32 y, u8 c) { if (HR_IN_HOLE(x, y)) return; /* S3.4 */ enh_hr.layer[(size_t)y * enh_hr.lw + x] = (u16)(0x100 | c); }
 
 u8 hr_get(s32 x, s32 y)
 {

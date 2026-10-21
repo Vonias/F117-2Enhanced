@@ -27,7 +27,7 @@ static const GeomCase geom[] = {
     { ENH_VIEW_MENU,  1920, 1080, true, 0, true, 1920,  900, 4, 320,  50, 320,  50, 1280,  800 },
     { ENH_VIEW_FRONT, 3440, 1440, false, 0, true, 3440, 1440, 7, 600,  40,   0,   0, 3440, 1440 },
     { ENH_VIEW_FIT,   3440, 1440, false, 0, true, 3440, 1440, 7, 600,  20, 600,  20, 2240, 1400 },
-    { ENH_VIEW_FRONT, 1920, 1080, false, 8, true, 1920, 1080, 5, 160,  80,   0,   0, 1920, 1080 },
+    { ENH_VIEW_FRONT, 1920, 1080, false, 8, true, 2560, 1600, 8,   0,   0,   0,   0, 2560, 1600 },   /* S3.4: a fixed scale is kept (the canvas holds the frame; the host scales it down) */
     { ENH_VIEW_FRONT, 1000, 1000, false, 0, true, 1000, 1000, 3,  20, 400,   0,   0, 1000, 1000 },
     { ENH_VIEW_FRONT, 200, 150, true, 0, true,    320,  200, 1,   0,   0,   0,   0,  320,  200 },
     { ENH_VIEW_FRONT, 1920, 1080, true, 0, false, 1280, 800, 4,   0,   0,   0,   0, 1280,  800 },
@@ -46,6 +46,54 @@ static void test_geometry(void)
               "geometry %zu (view %d, %dx%d): got %dx%d n=%d at %d,%d viewport %d,%d %dx%d", i, g->view, g->win_w, g->win_h,
               c.lw, c.lh, c.n, c.fx, c.fy, c.vx, c.vy, c.vw, c.vh);
     }
+}
+
+/* S3.4 (--wide-geometry-test, ctest wide_geometry): the placement of every view for windows of several aspects. Extended (the first cockpit view, the outside views):
+ * the canvas is the window, the frame bottom centre, the 3D viewport the whole canvas. Not extended (the second cockpit view = view 0 with [294B] = 1, left, right,
+ * rear, menus): the frame centred, the viewport the frame, so the rest of the canvas is black. Prints one line per window and view class. */
+int enh_wide_geometry_test(void)
+{
+    static const struct { const char *name; int w, h; bool a43; } win[] = {
+        { "16:9", 1920, 1080, true }, { "16:9 1:1", 1920, 1080, false }, { "21:9", 2560, 1080, true }, { "21:9 1:1", 3440, 1440, false },
+        { "32:9", 5120, 1440, true }, { "4:3", 1600, 1200, true }, { "16:10", 1920, 1200, true }, { "tall", 1080, 1920, true }, { "small", 700, 500, true },
+    };
+    static const struct { const char *name; int mode, style; EnhView want; } views[] = {
+        { "first cockpit (0)", 0, 0, ENH_VIEW_FRONT }, { "second cockpit (0, 294B=1)", 0, 1, ENH_VIEW_FIT }, { "rear (41)", 0x41, 0, ENH_VIEW_FIT },
+        { "left (42)", 0x42, 0, ENH_VIEW_FIT }, { "right (43)", 0x43, 0, ENH_VIEW_FIT }, { "front clean (44)", 0x44, 0, ENH_VIEW_FULL },
+        { "delayed (84)", 0x84, 0, ENH_VIEW_FULL }, { "side (85)", 0x85, 0, ENH_VIEW_FULL }, { "chase (87)", 0x87, 0, ENH_VIEW_FULL },
+        { "target shoulder (88)", 0x88, 0, ENH_VIEW_FULL }, { "weapon (89)", 0x89, 0, ENH_VIEW_FULL }, { "target far (8B)", 0x8B, 0, ENH_VIEW_FULL },
+        { "eject (8C)", 0x8C, 0, ENH_VIEW_FULL },
+    };
+    int fails = 0, lines = 0;
+    for (size_t v = 0; v < sizeof views / sizeof views[0]; v++)
+        if (enh_view_class(views[v].mode, views[v].style) != views[v].want) { printf("FAIL: %s is class %d, want %d\n", views[v].name, enh_view_class(views[v].mode, views[v].style), views[v].want); fails++; }
+    for (size_t k = 0; k < sizeof win / sizeof win[0]; k++)
+        for (int pass = 0; pass < 3; pass++) {
+            const EnhView cls = pass == 0 ? ENH_VIEW_FRONT : pass == 1 ? ENH_VIEW_FULL : ENH_VIEW_FIT;
+            for (int fixed = 0; fixed <= 4; fixed += 4) {
+                EnhCanvas c;
+                enh_canvas_geometry(&c, cls, win[k].w, win[k].h, win[k].a43, fixed, true);
+                const int lw = win[k].w, lh = win[k].a43 ? win[k].h * 5 / 6 : win[k].h;
+                int fit = lw / 320 < lh / 200 ? lw / 320 : lh / 200;
+                if (fit < 1) fit = 1;
+                const int n = fixed ? fixed : fit;
+                const int clw = lw > 320 * n ? lw : 320 * n, clh = lh > 200 * n ? lh : 200 * n;
+                const bool ext = cls != ENH_VIEW_FIT;
+                bool ok = c.n == n && c.lw == clw && c.lh == clh && c.fx == (clw - 320 * n) / 2;
+                if (ext) ok = ok && c.fy == clh - 200 * n && c.vx == 0 && c.vy == 0 && c.vw == clw && c.vh == clh;
+                else ok = ok && c.fy == (clh - 200 * n) / 2 && c.vx == c.fx && c.vy == c.fy && c.vw == 320 * n && c.vh == 200 * n;
+                /* the extensions in original pixels (DESIGN 3.1): left, right, top */
+                const int el = c.fx / n, er = (c.lw - c.fx - 320 * n) / n, et = c.fy / n;
+                if (!ok) fails++;
+                if (lines++ < 200)
+                    printf("%-9s %4dx%-4d %s render-scale %d %-6s canvas %4dx%-4d N=%d frame at %4d,%-4d viewport %4d,%-4d %4dx%-4d extension L %3d R %3d T %3d%s\n",
+                           win[k].name, win[k].w, win[k].h, win[k].a43 ? "4:3 px" : "1:1 px", fixed, cls == ENH_VIEW_FRONT ? "front" : cls == ENH_VIEW_FULL ? "full" : "fit",
+                           c.lw, c.lh, c.n, c.fx, c.fy, c.vx, c.vy, c.vw, c.vh, ext ? el : 0, ext ? er : 0, ext ? et : 0, ok ? "" : "  FAIL");
+            }
+        }
+    printf("wide-geometry %s: %d views classified, %d window / view / scale cases, %d failures\n", fails ? "FAILED" : "OK",
+           (int)(sizeof views / sizeof views[0]), lines, fails);
+    return fails ? 1 : 0;
 }
 
 static unsigned rng_state = 12345;

@@ -167,7 +167,7 @@ int main(int argc, char **argv)
     video_init();             /* the driver's state, the fonts of MGRAPHIC.EXE (silently none without the game files) */
 
     if (enh.compose_test) {                                    /* ENH: canvas geometry and compositor check */
-        int rc = enh_compose_selftest();
+        int rc = enh.compose_test == 2 ? enh_wide_geometry_test() : enh_compose_selftest();   /* ENH: S3.4 */
         host_shutdown();
         return rc;
     }

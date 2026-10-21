@@ -7,6 +7,8 @@ same machine run tick for tick), with the enhancements on:
   test  --sandbox-hash FILE --sandbox-test K     (K sandboxed display passes in every VGAME frame, rendered from the frame's pre-render image
                                                  with a test view: another heading and position per pass, sandbox.c test_view)
   classic --classic --sandbox-hash FILE          (the faithful path: everything but the canvas hash must be the same as base)
+  wide  --sandbox-hash FILE --wide, window 1280 x 720 (S3.4: a canvas wider than the frame, so every frame of the first cockpit view gets a wide
+                                                 display pass with the culling widened to the canvas: everything but the canvas hash must be the same as base)
 Per VGAME frame the port writes a hash of the sim state the previous step left: the whole DGROUP, the comm block, the LCG 926E, the sound
 driver's memory and the OPL register stream so far, the whole mem[], the VGA model (vram + DAC) and the canvas (shadow plane and layers,
 so a leak only the hr picture would show is caught too). Every frame must be identical, and the final comm block and ROSTER.FIL too; the test run
@@ -37,7 +39,7 @@ def fresh_game(game, dst):
     return dst
 
 
-def run(exe, game, work, name, extra):
+def run(exe, game, work, name, extra, window=None):
     d = os.path.join(work, name)
     g = fresh_game(game, os.path.join(d, 'game'))
     hf = os.path.join(d, 'hash.txt')
@@ -45,6 +47,9 @@ def run(exe, game, work, name, extra):
                F117_VGAME_FRAMES='400', F117_END_SCRIPT=os.path.join(S58, 'end_chain.txt'), F117_VCLOCK='1',
                F117_ENH_ARGS=('--sandbox-hash %s %s' % (hf, extra)).strip())
     env.pop('F117_CLASSIC', None)
+    env.pop('F117_WINDOW', None)
+    if window:
+        env['F117_WINDOW'] = window                     # S3.4: the window a headless run pretends to have (a wide canvas)
     t = time.time()
     p = subprocess.run([exe, '--headless', '--trace', '--game-dir', g], env=env, capture_output=True, text=True, timeout=900)
     secs = time.time() - t
@@ -117,6 +122,20 @@ def main():
     if len(c['frames']) != len(fa) or re.sub(r' passes=\d+ violations=\d+', '', c['final']) != fin_a or c['roster'] != a['roster']:
         print('enh_sandbox_hash FAILED: --classic ends differently (%d frames, %s)' % (len(c['frames']), c['final']))
         return 1
+    w = run(exe, game, work, 'wide', '--wide', window='1280x720')   # S3.4: the wide display passes leave the sim as it is
+    if w is None:
+        return 1
+    for i, (la, lw_) in enumerate(zip(fa, w['frames'])):
+        if strip(la) != strip(lw_):
+            pa, pw = la.split(), lw_.split()
+            diff = [x.split('=')[0] for x, y in zip(pa, pw) if x != y]
+            print('enh_sandbox_hash FAILED: VGAME frame %d differs between the --wide run and the base run (%s)\n  base %s\n  wide %s' % (i, ', '.join(diff), la, lw_))
+            return 1
+    mw = re.search(r'passes=(\d+) violations=(\d+)', w['final'])
+    wpasses, wviol = int(mw.group(1)), int(mw.group(2))
+    if len(w['frames']) != len(fa) or re.sub(r' passes=\d+ violations=\d+', '', w['final']) != fin_a or w['roster'] != a['roster'] or wviol or wpasses < (len(fa) * 3) // 4:
+        print('enh_sandbox_hash FAILED: the --wide run ends differently or ran too few wide passes (%d frames, %d passes, %d forbidden calls, %s)' % (len(w['frames']), wpasses, wviol, w['final']))
+        return 1
     m = re.search(r'passes=(\d+) violations=(\d+)', b['final'])
     passes, viol = int(m.group(1)), int(m.group(2))
     if viol or passes < k * (len(fb) - 1):
@@ -124,7 +143,8 @@ def main():
         return 1
     opl = re.search(r'opl=(\d+):', fa[-1]).group(1)
     print('enh_sandbox_hash OK: %d VGAME frames identical with %d display passes per frame (%d passes, %s OPL writes by then) and in --classic, '
-          'final comm block and roster identical; %s; base %.0f s, test %.0f s, classic %.0f s' % (len(fa), k, passes, opl, b['stats'], a['secs'], b['secs'], c['secs']))
+          'final comm block and roster identical; %s; base %.0f s, test %.0f s, classic %.0f s; --wide (canvas 1280 x 600): %d wide display passes, the same %d frames '
+          '(all but the canvas hash), 0 forbidden calls, %.0f s' % (len(fa), k, passes, opl, b['stats'], a['secs'], b['secs'], c['secs'], wpasses, len(w['frames']), w['secs']))
     return 0
 
 

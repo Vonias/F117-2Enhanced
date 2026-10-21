@@ -38,9 +38,15 @@ extern int enh_vec_hold;        /* S3.1: > 0 = the 1x vector writes now are an h
 bool enh_canvas_active(void);
 void enh_canvas_set_active(bool on);
 void enh_set_view(int view_mode);                       /* view_frame's mode word (DSW C07A) -> EnhView */
+EnhView enh_view_class(int view_mode, int style);       /* S3.4: the placement of view C07A with the HUD style [294B] (view 0 with style 1 = the second cockpit view: FIT) */
+bool enh_canvas_extended(void);                         /* S3.4: the current view is extended and the canvas is larger than the frame */
+void enh_menu(bool on);                                 /* S3.4: a VGAME menu screen (quit requester, boss screen) is up: pillarboxed; off = the view before it */
+void enh_wide_capture(void);                            /* S3.4, sandbox.c: the wide display pass's 3D and vector layers (after its flip) become the pending wide picture */
+void enh_wide_clear_outside(void);                      /* S3.4, hr_pass.c: a wide main pass opens: the layers outside the frame are cleared */
 EnhView enh_view_get(void);
 /* Recomputes the geometry for the output size; true when the canvas size changed (the host then resizes its frame). */
 bool enh_canvas_update(int win_w, int win_h, bool aspect43);
+void enh_canvas_test_window(int w, int h);              /* S3.4, the render test: the canvas follows this window (1:1 pixels) instead of the host's; 0 = the host's */
 /* Composes the live VGA page (CRTC start / pan, DAC) with the layers into the canvas; false when it did not change. */
 bool enh_compose_vga(u32 *xrgb);
 void enh_canvas_to_frame(int *x, int *y);               /* canvas pixel -> 320x200 frame pixel (clamped), for the mouse */
@@ -107,3 +113,4 @@ size_t enh_canvas_snap_bytes(const EnhCanvasSnap *s);
 void enh_canvas_snap_peek(EnhCanvasSnap *s);              /* the live state as a snapshot value (its buffers stay the live ones: read only) */
 
 int enh_compose_selftest(void);                         /* --compose-test */
+int enh_wide_geometry_test(void);                       /* S3.4: --wide-geometry-test */
