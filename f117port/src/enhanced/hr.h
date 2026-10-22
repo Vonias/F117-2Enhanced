@@ -89,6 +89,22 @@ void hr_clip_regions(void (*add)(void *p, size_t n));
 void hr_edge2d_regions(void (*add)(void *p, size_t n));
 void hr_raster_regions(void (*add)(void *p, size_t n));
 
+/* ---- S3.5 smooth distance shading (hr_shade.c, DESIGN 2.11). A 3D layer word: bits 0..7 the index, bit 8 written, bit 9 stamped, bits 10..15 the blend code
+ * (0 = none, else d = code - 32 in -31..31: the continuous colour position minus the index in 1/64 of a ramp entry; the compositor mixes DAC[idx] with DAC[idx +- 1]
+ * of the same 16-entry ramp by |d| / 64). Only written with --smooth-shading. */
+#define HR_BLEND_SHIFT 10
+#define HR_BLEND_MASK 0xFC00
+static inline u16 hr_blend_code(int d) { if (d < -31) d = -31; if (d > 31) d = 31; return d ? (u16)((32 + d) << HR_BLEND_SHIFT) : 0; }
+extern bool hr_smooth;                             /* the option, latched when a pass opens */
+void hr_shade_pass_begin(void);                    /* a pass opens: the object shade is forgotten */
+void hr_shade_object(void);                        /* r3d_place_object (E7AC) after [4894] = 1088:0120: the continuous shade of the object being drawn */
+void hr_shade_queue(u16 e);                        /* r3d_queue_insert (DDFE) after the record's +4 shade: the continuous shade of record e */
+void hr_shade_dequeue(u16 rec);                    /* r3d_draw_queued (DF08) after [4894] = record +4 */
+void hr_shade_colour(u16 colour);                  /* r3d_setcolor_M (1359:01D4): the colour word before the shade (its unshaded low byte) */
+u16  hr_shade_code(u16 colour);                    /* the blend code of a fill / line in the colour word (DS:85D6 after set_colour_M); 0 = not a shaded colour */
+void hr_band_blend(s16 H, const s16 *sky, const s16 *gnd);   /* hr_sky_ground after the bands: the per-pixel code of the band pixels */
+void hr_shade_regions(void (*add)(void *p, size_t n));
+
 /* ---- inside the back end */
 typedef struct HrEdge {
     s32 x0, y0, x1, y1;           /* before the clip: projected + centre; after it: the clipped ends */
@@ -104,6 +120,7 @@ void hr_edge_dda(const HrEdge *e);
 void hr_wall_fill(s32 a, s32 b, s32 x);
 void hr_fill(u16 colour);                          /* fill_M on the row tables */
 void hr_draw_line(s32 x0, s32 y0, s32 x1, s32 y1, u8 c);   /* line_M with the wide brush */
+void hr_draw_line_shaded(s32 x0, s32 y0, s32 x1, s32 y1, u16 colour);   /* S3.5: line_M with the blend code of a shaded colour word */
 void hr_put(s32 x, s32 y, u8 c);                   /* one layer pixel (no clip) */
 u8   hr_get(s32 x, s32 y);                         /* the layer pixel, or the page pixel under it when not written */
 s32 *hr_tab_l(void);

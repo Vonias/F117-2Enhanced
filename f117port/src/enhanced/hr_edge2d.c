@@ -406,4 +406,5 @@ void hr_sky_ground(void *ctx)
     gnd[0] = 0;
     for (int i = 1; i < 16; i++) gnd[i] = (s16)(u16)((u16)(alt / ((16 - i) << 5)) - c0);
     bands_hr(H, gnd, true, flag);
+    if (!flag) hr_band_blend(H, sky, gnd);               /* S3.5: the position of each band pixel inside its band (--smooth-shading) */
 }

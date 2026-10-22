@@ -282,7 +282,7 @@ bool enh_rec_remap(u16 seg, u16 off, u8 old, u8 val, u8 (*f)(u8))
     u16 *p = l3d_work + (size_t)(enh_cv.fy + (off / 320) * n) * enh_cv.lw + (size_t)(enh_cv.fx + (off % 320) * n);
     for (int ky = 0; ky < n; ky++, p += enh_cv.lw)
         for (int kx = 0; kx < n; kx++)
-            if (p[kx] & 0x100) p[kx] = (u16)((p[kx] & 0xFF00) | f((u8)p[kx]));
+            if (p[kx] & 0x100) p[kx] = (u16)((p[kx] & 0x0300) | f((u8)p[kx]));   /* S3.5: the tint drops the blend code (another ramp) */
     r->val = val;
     return true;
 }
@@ -420,7 +420,21 @@ void enh_flip(unsigned bytes)
 /* idx/sidx: the shown 320x200 page and the page offset of each pixel (0xFFFF = none); pal: the live DAC as XRGB. */
 /* the shadow plane and the 3D / vector layers being composed; S3.4: l3h / lvh = the wide picture (held): its 3D layer inside the frame rectangle hx0..hx1, hy0..hy1
  * (frame px: the 3D window of its main pass) and everywhere outside the frame, its vector layer outside the frame; cls (test aid): per canvas pixel what it shows */
-typedef struct { const Shadow *sh; const u16 *l3, *lv; const u16 *l3h, *lvh; int hx0, hy0, hx1, hy1; u8 *cls; } ComposeSrc;
+typedef struct { const Shadow *sh; const u16 *l3, *lv; const u16 *l3h, *lvh; int hx0, hy0, hx1, hy1; u8 *cls; bool blend; } ComposeSrc;   /* blend: S3.5, pal is a real palette */
+
+/* S3.5 (DESIGN 2.11): a 3D layer pixel; with a blend code (bits 10..15, --smooth-shading only) the mix of its colour and the neighbour entry of the same 16-entry ramp */
+static inline u32 l3_rgb(const u32 *pal, u16 l, bool blend)
+{
+    const u8 i = (u8)l;
+    if (!blend || !(l & HR_BLEND_MASK)) return pal[i];
+    const int d = (int)(l >> HR_BLEND_SHIFT) - 32, w = d < 0 ? -d : d;
+    const u8 j = (u8)(d > 0 ? i + 1 : i - 1);
+    if ((i ^ j) & 0xF0) return pal[i];
+    const u32 a = pal[i], b = pal[j];
+    u32 o = 0;
+    for (int sh = 0; sh <= 16; sh += 8) o |= ((((a >> sh) & 255) * (u32)(64 - w) + ((b >> sh) & 255) * (u32)w + 32) >> 6) << sh;
+    return o;
+}
 enum { CLS_BLACK, CLS_ART, CLS_WORLD, CLS_VEC, CLS_WORLD1 };   /* nothing / a page pixel (art, text, panel) / a 3D layer pixel / a vector layer pixel / a 3D record shown as its 1x pixel */
 
 static void compose_canvas(u32 *out, const u8 *idx, const u16 *sidx, const u32 *pal, bool screen, const ComposeSrc *cs)
@@ -443,7 +457,7 @@ static void compose_canvas(u32 *out, const u8 *idx, const u16 *sidx, const u32 *
             for (int x = 0; x < lw; x++) {
                 if (in_rows && x >= fx && x < fx + 320 * n) { x = fx + 320 * n - 1; continue; }
                 if (v && (v[x] & 0x100)) { o[x] = pal[v[x] & 255]; if (c) c[x] = CLS_VEC; }
-                else if (l[x] & 0x100) { o[x] = pal[l[x] & 255]; if (c) c[x] = CLS_WORLD; }
+                else if (l[x] & 0x100) { o[x] = l3_rgb(pal, l[x], cs->blend); if (c) c[x] = CLS_WORLD; }
             }
         }
     }
@@ -466,7 +480,7 @@ static void compose_canvas(u32 *out, const u8 *idx, const u16 *sidx, const u32 *
                 if (r->src == SRC_3D) {
                     for (int kx = 0; kx < n; kx++) {
                         u16 l = L3[at + kx];
-                        o[kx] = pal[(l & 0x100) ? (l & 255) : v];
+                        o[kx] = (l & 0x100) ? l3_rgb(pal, l, cs->blend) : pal[v];
                         if (co) co[x * n + kx] = (l & 0x100) ? CLS_WORLD : CLS_WORLD1;
                     }
                     continue;
@@ -483,7 +497,7 @@ static void compose_canvas(u32 *out, const u8 *idx, const u16 *sidx, const u32 *
                 for (int kx = 0; kx < n; kx++) {
                     u16 lv = lvec_shown[at + kx];
                     u16 l3 = L3[at + kx];
-                    o[kx] = (lv & 0x100) ? pal[lv & 255] : (r->under3d && (l3 & 0x100)) ? pal[l3 & 255] : pal[r->under];
+                    o[kx] = (lv & 0x100) ? pal[lv & 255] : (r->under3d && (l3 & 0x100)) ? l3_rgb(pal, l3, cs->blend) : pal[r->under];
                     if (co) co[x * n + kx] = (lv & 0x100) ? CLS_VEC : (r->under3d && (l3 & 0x100)) ? CLS_WORLD : r->under3d ? CLS_WORLD1 : CLS_ART;
                 }
             }
@@ -496,6 +510,7 @@ static void compose_src_live(ComposeSrc *cs)
 {
     memset(cs, 0, sizeof *cs);
     cs->sh = sh_shown; cs->l3 = l3d_shown; cs->lv = lvec_shown;
+    cs->blend = true;                                                 /* S3.5: the live DAC */
     const Held *h = &held[1];
     if (h->valid && !menu_on && enh_canvas_extended() && h->cap >= layer_px && !memcmp(&h->cv, &enh_cv, sizeof enh_cv)) {
         cs->l3h = h->l3; cs->lvh = h->lv;
@@ -524,11 +539,11 @@ bool enh_compose_vga(u32 *xrgb)
 
 /* S3.1 test aid (the hr check and the dumps of the render test): the frame being drawn (the work shadow and layers) composed from `page` (the
  * 320x200 page of its pass) with `pal` (256 entries). Same rule as the present path. */
-void enh_compose_work(u32 *out, const u8 *page, const u32 *pal)
+void enh_compose_work(u32 *out, const u8 *page, const u32 *pal, bool blend)
 {
     static u16 ident[PAGE_PIXELS];
     if (ident[1] == 0) for (int i = 0; i < PAGE_PIXELS; i++) ident[i] = (u16)i;
-    const ComposeSrc cs = { sh_work, l3d_work, lvec_work, NULL, NULL, 0, 0, 0, 0, NULL };
+    const ComposeSrc cs = { sh_work, l3d_work, lvec_work, NULL, NULL, 0, 0, 0, 0, NULL, blend };   /* S3.5: blend = pal is the DAC */
     compose_canvas(out, page, ident, pal, true, &cs);
 }
 
@@ -684,7 +699,7 @@ static void probe_flip(void)
                     fwrite(hd, 4, 2, o);
                     fwrite(img, 4, layer_px, o);
                     static Shadow none[PAGE_PIXELS];                       /* no records: the 1x page scaled N x N, the classic picture of the same frame */
-                    const ComposeSrc c1 = { none, l3d_shown, lvec_shown, NULL, NULL, 0, 0, 0, 0, NULL };
+                    const ComposeSrc c1 = { none, l3d_shown, lvec_shown, NULL, NULL, 0, 0, 0, 0, NULL, false };
                     compose_canvas(img, pg, ident, pal, true, &c1);
                     fwrite(img, 4, layer_px, o);
                     fclose(o);

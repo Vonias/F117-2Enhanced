@@ -29,6 +29,7 @@ void gfxlib_rows_mcga(void)
 void r3d_setcolor_M(u16 colour)
 {
     WIN->gfx_colour = colour;
+    ENH_HR(hr_shade_colour(colour));   /* ENH: S3.5, the unshaded colour */
     u8 al = (u8)colour, ah = (u8)(colour >> 8);
     if (ah == 0xFF && al >= 0xA0) {
         ah = al & 0xF0;

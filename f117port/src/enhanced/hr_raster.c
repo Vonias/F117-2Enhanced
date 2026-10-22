@@ -62,7 +62,8 @@ void hr_raster_begin(void)
 
 /* ---------------------------------------------------------------- layer pixels */
 
-void hr_put(s32 x, s32 y, u8 c) { if (HR_IN_HOLE(x, y)) return; /* S3.4 */ enh_hr.layer[(size_t)y * enh_hr.lw + x] = (u16)(0x100 | c); }
+static u16 put_code;                               /* S3.5: the blend code of the shaded fill / line being drawn (0 otherwise) */
+void hr_put(s32 x, s32 y, u8 c) { if (HR_IN_HOLE(x, y)) return; /* S3.4 */ enh_hr.layer[(size_t)y * enh_hr.lw + x] = (u16)(0x100 | c | put_code); }
 
 u8 hr_get(s32 x, s32 y)
 {
@@ -197,17 +198,22 @@ void hr_fill(u16 colour)
     Spans sp;
     s32 y, l, r;
     if (ah < 0xFB || ah == 0xFF) {
-        if (ah == 0xFF) ah = al;
-        if (!spans_begin(&sp, false)) return;
+        if (ah == 0xFF) { put_code = hr_shade_code(colour); ah = al; }   /* S3.5 */
+        if (!spans_begin(&sp, false)) { put_code = 0; return; }
         while (spans_next(&sp, &y, &l, &r))
             for (s32 x = l; x <= r; x++) hr_put(x, y, phase(x, y) ? ah : al);
+        put_code = 0;
     } else if (ah == 0xFE || ah == 0xFD) {
         if (!spans_begin(&sp, false)) return;
         while (spans_next(&sp, &y, &l, &r))
             for (s32 x = l; x <= r; x++) {
                 u8 v = hr_get(x, y);
-                hr_put(x, y, ah == 0xFE ? (u8)(v & al) : (u8)(v | al));
+                u8 nv = ah == 0xFE ? (u8)(v & al) : (u8)(v | al);
+                const u16 old = enh_hr.layer[(size_t)y * enh_hr.lw + x];   /* S3.5: the ground ramps keep the band position (AND 7Fh / 6Fh, OR 80h) */
+                put_code = (old & 0x100) && nv >= 0x60 ? (u16)(old & HR_BLEND_MASK) : 0;
+                hr_put(x, y, nv);
             }
+        put_code = 0;
     } else if (ah == 0xFC) {
         if (!spans_begin(&sp, true)) return;
         while (spans_next(&sp, &y, &l, &r))
@@ -268,4 +274,12 @@ void hr_draw_line(s32 bx, s32 di, s32 bp, s32 cx, u8 c)
             if (--n == 0) return;
         }
     }
+}
+
+/* S3.5: a 3D line (line_M) in the colour word: a shaded colour carries the object's blend code */
+void hr_draw_line_shaded(s32 x0, s32 y0, s32 x1, s32 y1, u16 colour)
+{
+    put_code = hr_shade_code(colour);
+    hr_draw_line(x0, y0, x1, y1, (u8)colour);
+    put_code = 0;
 }

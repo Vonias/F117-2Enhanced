@@ -183,6 +183,7 @@ void r3d_place_object(u16 type, s16 a1, s16 a2, s16 a3, s16 X, s16 Y, s16 Z)
     if (flags & 0x80) { r3d_queue_insert(); return; }
     DSW(0xC030) = dead;
     DSB(0x4894) = (u8)r3d_depth_shade();
+    ENH_HR(hr_shade_object());   /* ENH: S3.5, the continuous shade */
     mat_from_euler((u16)-a1, (u16)-a2, (u16)a3, 0x49A0);
     r3d_transpose49A0();
     r3d_draw_object(idx, DSS(0x4964), DSS(0x4968), (s16)-DSS(0x4966), 0x49A0, 0xC02E);
@@ -265,6 +266,7 @@ void r3d_queue_insert(void)
     if (DSW(0xE2FC) == 2 && DSW(0x497A) == 5) key = (s32)((u32)key + 0x00200000u);
     DSSL(e) = key;
     DSW((u16)(e + 4)) = (u8)r3d_depth_shade();
+    ENH_HR(hr_shade_queue(e));   /* ENH: S3.5 */
     DSW((u16)(e + 6)) = DSW(0x49C6); DSW((u16)(e + 8)) = DSW(0x4956);
     DSW((u16)(e + 0xA)) = DSW(0x4964); DSW((u16)(e + 0xC)) = DSW(0x4966); DSW((u16)(e + 0xE)) = DSW(0x4968);
     DSW((u16)(e + 0x10)) = DSW(0x496A); DSW((u16)(e + 0x12)) = DSW(0x496C); DSW((u16)(e + 0x14)) = DSW(0x496E);
@@ -308,6 +310,7 @@ void r3d_draw_queued(void)
         u16 t = DSW((u16)(rec + 8));
         if (t & 0x0400) { if (enh_shadow_on) enh_bill_pending(rec) /* ENH: S3.1 */; r3d_sprite_main(DSS((u16)(rec + 0x10)), DSS((u16)(rec + 0x12)), DSS((u16)(rec + 0x14)), (s16)(t & 7)); continue; }
         DSB(0x4894) = DSB((u16)(rec + 4));
+        ENH_HR(hr_shade_dequeue(rec));   /* ENH: S3.5 */
         DSW(0x4956) = t & 0x7FFF;
         DSW(0x4964) = DSW((u16)(rec + 0xA)); DSW(0x4966) = DSW((u16)(rec + 0xC)); DSW(0x4968) = DSW((u16)(rec + 0xE));
         DSW(0x496A) = DSW((u16)(rec + 0x10)); DSW(0x496C) = DSW((u16)(rec + 0x12)); DSW(0x496E) = DSW((u16)(rec + 0x14));

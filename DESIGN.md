@@ -245,6 +245,39 @@ crosshair, all through `hud_line_clip` -> `line_clip_far` -> `line`. So one hook
   chain with F4, v, c, F8, F3, Alt-N): 99.4-99.8 % of the HUD's vector records show a vector-layer pixel (tapes, frame and the ladder / reticle centre 100 %), the map window with the route
   legs 82 % (the rest are the blips), the scope 100 %.
 
+### 2.11 Smooth distance shading (S3.5, option `--smooth-shading`, default off)
+How the original shows distance (render3d.md Part 1 `1088:0120`, Part 6 B `1442`; FORMATS.md "Flight palette", "3D objects"):
+* **Sky / ground bands (1442).** Detail >= 3 draws 16 sky bands in colours `80h + i` and 16 ground bands in `70h + i` (`i` = 0 at the horizon; ramps of 16 DAC entries). Band
+  `i` lies between two parallel lines at perpendicular offsets `t_i`, `t_(i+1)` (1x px, vertical scaled by 0.75): a pixel q of the window has
+  `t(q) = -(sn (qx - w2) + cs (qy - h2) 4/3)`, sn = -[498A] / 32768, cs = [498C] / 32768 (band_points: centre `(w2 - sn t, h2 - 0.75 cs t)`, direction `(cs, -0.75 sn)`).
+  Sky: `t_i = H + DS:0D22[i]` = H + 0, 2, 3, 4, 6, 8, 11, 15, 20, 27, 36, 48, 64, 87, 119, 164, band 15 to +22600 (widths 2, 1, 1, 2, 2, 3, 4, 5, 7, 9, 12, 16, 23, 32, 45 px). Ground:
+  `t_i = H - G_i`, `G_0 = 0`, `G_i = alt / ((16 - i) 32) - alt / 512` (wider with altitude; at low altitude bands 0..14 collapse onto the horizon and the ground is 7Fh), band 15 to
+  -22600. H = the horizon offset `sin(pitch) 256 / cos(pitch)` (zoom `[433A]`, halved by `[294B]`). Each band is one colour: a step of one ramp entry per band. Detail < 3
+  (`hz_draw`) and the mono TV picture (88h / 7Ch) are flat: nothing to smooth.
+* **Faces on the ground (AND / OR fills, FEh / FDh).** Roads, fields and water are AND 7Fh / AND 6Fh / OR 80h polygons over the backdrop: they keep the band's low nibble and move
+  it to the ramps 70h, 60h, F0h, so they show the same distance bands in their own ramp.
+* **Depth shade of objects and terrain (1088:0120).** Every placed object (the terrain tiles and scenery of 04DA, sites, aircraft, the queued objects of DDFE / DF08) gets one shade
+  `s = clamp((C >> 25) - class, 0, 31) >> 1` (0..15; C = the 32-bit view depth [4960] of its origin, class = [497A] 0..7; 0 in the map (ortho) or with Alt-A off [43B6]): a step
+  every 2^26 of depth. `set_colour_M` (1359:01D4) draws a shaded colour (hi FFh, lo >= A0h) as `max(lo - s, lo & F0h)`: the ramps A0h..FFh run from the far (haze) entry at the
+  ramp base up to the near colour. The shade is per object, not per pixel; the steps show as an object (or a ring of terrain tiles) jumps one ramp entry when its depth crosses a step.
+
+Smooth (as built):
+* **Encoding.** The 3D layer word keeps the original index in bits 0..7 (bit 8 written, bit 9 stamped, as before) and a blend code in bits 10..15: 0 = none, else
+  `d = code - 32` (-31..31) = the continuous colour position minus the index, in 1/64 of a ramp entry. Every writer that does not know about it (sprites, stamps, solid
+  faces, lines, the FLIR tint) leaves 0, so the option-off layer and the index of every pixel are unchanged; only shaded colours gain a code.
+* **Bands.** After the hr bands of 1442 (`hr_sky_ground`) every layer pixel of the pass window showing `70h + i` / `80h + i` gets `f = (t(q) - t_i) / (t_(i+1) - t_i)`
+  (band 15 uses the width of band 14), clamped to 0..1, and `d = f - 1/2` (none below the centre of band 0 or above the centre of band 15): the band colours sit at the band
+  centres and the colour runs linearly between neighbouring centres. The band index stays the fill's, so a pixel that the edge rounding put in the neighbour band clamps to the
+  shared boundary value (no reversal). AND / OR fills keep the code when the result is >= 60h (the ground ramps), any other write clears it.
+* **Objects.** At the shade (E7AC, DDFE record, DF08) the hr back end keeps the continuous shade `sc = clamp(C / 2^25 - class, 0, 32) / 2` in 1/64 (the queue per record
+  slot). A shaded fill or line (hi FFh, lo >= A0h; lo from a hook in `set_colour_M`) gets `d = max(lo - (sc - 1/2), base) - index` (centred like the bands): an object fades
+  through the ramp as its depth changes instead of jumping; it stays one colour per face (the original shade is per object).
+* **Compositor.** A 3D layer pixel with a code shows `mix(DAC[idx], DAC[idx +- 1], |d| / 64)` from the live DAC (the neighbour in the same 16-entry ramp; none across a ramp
+  edge), so fades, flashes, the night palettes and the FLIR (which clears the code) still apply. Dither / stipple faces: the colours they write are unshaded, the pixels they leave
+  keep the backdrop's code. HUD, MFD, cockpit art and sprites are other layers / page pixels: untouched.
+* Option off, `--classic`: no code is ever written; the compositor then shows exactly the indices (the golden / hr-check tests). The sim and the 1x page are not touched (hooks
+  only store hr state). Tests: `port/notes/e35/` (section 2.11 numbers in PLAN.md S3.5 status).
+
 ## 3 (b) The wider view
 
 ### 3.1 Canvas geometry (window of any aspect)

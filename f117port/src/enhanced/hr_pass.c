@@ -29,7 +29,7 @@ static u16 last_seg = 0xA000;
 void hr_sandbox_regions(EnhRegionAdd add)
 {
     add(&enh_hr, sizeof enh_hr); add(&enh_hr_pt, sizeof enh_hr_pt); add(&last_seg, sizeof last_seg);
-    hr_clip_regions(add); hr_edge2d_regions(add); hr_raster_regions(add);
+    hr_clip_regions(add); hr_edge2d_regions(add); hr_raster_regions(add); hr_shade_regions(add);   /* S3.5 */
 }
 
 static void trace_put(s32 v)
@@ -138,6 +138,7 @@ void enh_r3d_viewport(u16 vp)
     continue_next = false;
     enh_hr.have = false;
     hr_obj_pass_begin();
+    hr_shade_pass_begin();                                                /* S3.5 */
     if (!enh_page_tracked(seg)) return;
     if (!keep) enh_pass_clear(x0, y0, x1, y1);
     u16 *layer = enh_layer3d();
@@ -297,7 +298,7 @@ static void frame_check(const char *id)
     u32 pal[256];
     for (int i = 0; i < 256; i++) pal[i] = (u32)i;
     const u8 *pg = seg_ptr(last_seg);
-    enh_compose_work(img, pg, pal);
+    enh_compose_work(img, pg, pal, false);
     memset(&fs, 0, sizeof fs);
     const u16 *vl = enh_layer_vec();
     for (int y = 0; y < 200; y++)
@@ -372,6 +373,22 @@ static void frame_check(const char *id)
                 free(row);
             }
             fclose(f);
+        }
+        const char *e = getenv("F117_HRD_RGB");                     /* S3.5 test aid: the canvas as presented (the live DAC, blend codes mixed) as DIR/<id>.rgb (s32 lw, lh, lw * lh XRGB) */
+        if (e && *e == '1') {
+            for (int i = 0; i < 256; i++) {
+                u32 r = (u32)dac[3 * i] << 2, g = (u32)dac[3 * i + 1] << 2, b = (u32)dac[3 * i + 2] << 2;
+                pal[i] = ((r | r >> 6) << 16) | ((g | g >> 6) << 8) | (b | b >> 6);
+            }
+            enh_compose_work(img, pg, pal, true);
+            snprintf(path, sizeof path, "%s/%s.rgb", enh.hr_dump, id);
+            f = fopen(path, "wb");
+            if (f) {
+                s32 hd[2] = { lw, lh };
+                fwrite(hd, 4, 2, f);
+                fwrite(img, 4, (size_t)lw * (size_t)lh, f);
+                fclose(f);
+            }
         }
     }
     free(img);

@@ -398,5 +398,5 @@ void hr_line(u16 rec)
 {
     HrEdge *e = edge_of(rec);
     if (!e || (e->flags & 0x80)) return;
-    hr_draw_line(e->x0, e->y0, e->x1, e->y1, (u8)R3D_W->gfx_colour);
+    hr_draw_line_shaded(e->x0, e->y0, e->x1, e->y1, R3D_W->gfx_colour);   /* S3.5: with the blend code of a shaded colour */
 }

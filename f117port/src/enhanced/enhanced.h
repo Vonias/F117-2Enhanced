@@ -17,6 +17,8 @@ typedef struct {
     int  sandbox_test;   /* --sandbox-test N: N sandboxed display passes per VGAME frame, nothing shown (S2.4 test; S4.1 runs them for real) */
     char sandbox_hash[1024];   /* --sandbox-hash FILE: a hash of the sim state per VGAME frame (test aid; also in --classic, it changes nothing) */
     int  wide_test_w, wide_test_h;   /* --wide-test WxH (S3.4 test aid): the render test draws each scene's main 3D pass as a wide pass on a W x H canvas */
+    bool smooth_shading; /* --smooth-shading / --no-smooth-shading (S3.5, default off): the distance bands (sky / ground 1442, the depth shade 1088:0120) blended into a
+                          * gradient in the compositor (DESIGN 2.11); ignored with --classic */
     char mfd_probe[1024];      /* --mfd-probe PREFIX (S3.2 test aid): per page flip PREFIX.txt gets how much of the TV and map windows is shown from the 3D layer; F117_PROBE_FRAMES=a,b dumps those frames */
 } EnhOptions;
 
@@ -28,5 +30,7 @@ int enh_parse_arg(int argc, char **argv, int i);
 bool enh_canvas_on(void);
 /* Display passes wanted (not --classic, not F117_CLASSIC). */
 bool enh_sandbox_on(void);
+/* S3.5: smooth distance shading wanted (--smooth-shading, the canvas on, not --classic / F117_CLASSIC). */
+bool enh_smooth_on(void);
 /* Options from the environment variable F117_ENH_ARGS (for test drivers that build their own command line); once. */
 void enh_env_args(void);

@@ -84,7 +84,7 @@ void enh_flip(unsigned bytes);                          /* the page flip copied 
 /* Layers for the emitters (S2.2, S3.x): 16-bit entries, bit 8 = written, low byte = DAC index (bit 9: a stamped 1x value, see
  * enh_rec_fill). Work = being drawn, shown = flipped. */
 void enh_vec_put(int lx, int ly, u8 c);                 /* S3.1: a vector-layer pixel of an hr emitter, layer coordinates; marks its page pixel */
-void enh_compose_work(u32 *out, const u8 *page, const u32 *pal);   /* S3.1 test aid: the frame being drawn composed from `page` */
+void enh_compose_work(u32 *out, const u8 *page, const u32 *pal, bool blend);   /* S3.1 test aid: the frame being drawn composed from `page` (S3.5: blend = pal is the DAC, mix the blend codes) */
 /* S3.3: the HUD / MFD vector lines at N x (hr_obj.c). A hook pair around the 1x drawing of line() / hud_tick_strip(): begin decides (true = the 1x footprint is held, SRC_VECHR) and end
  * draws the same line / ticks thin (max(1, N/2) layer pixels, Decisions Q3) in the vector layer, from the 1x endpoints (frame pixels incl. draw_off). */
 extern bool enh_hud_hr_off;                             /* test aid (--compose-test): no hr look for the 1x lines */

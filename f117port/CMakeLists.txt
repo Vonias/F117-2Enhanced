@@ -236,6 +236,19 @@ if(Python3_Interpreter_FOUND)
     set_tests_properties(r3d_hr_wide PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 1800 DEPENDS render3d_golden PASS_REGULAR_EXPRESSION "r3d-wide OK")
 endif()
 
+# ENH: S3.5, smooth distance shading (--smooth-shading, DESIGN 2.11). r3d_hr_smooth (port/notes/e35/smooth_scenes.py): the golden scenes at N = 2, frame and 16:9 wide canvas,
+# and at N = 1, option off against on: the layer index unchanged, untouched pixels identical, every blended pixel the mix of its two ramp colours from the live DAC, the
+# band steps gone (monotonic along the columns). r3d_hr_smooth_realpath (port/notes/e35/smooth_realpath.py): the sandbox-hash chain day and night (F117_TEST_NIGHT) with the
+# option: the sim identical; the view sweep of wide_realpath with the option, day and night: no crash, the same frames. (By hand: add `--png work/e35` to either.)
+if(Python3_Interpreter_FOUND)
+    add_test(NAME r3d_hr_smooth COMMAND Python3::Interpreter ${CMAKE_CURRENT_SOURCE_DIR}/../port/notes/e35/smooth_scenes.py
+             $<TARGET_FILE:f117> ${CMAKE_CURRENT_SOURCE_DIR}/../Game ${CMAKE_CURRENT_BINARY_DIR}/r3d_smooth ${CMAKE_CURRENT_BINARY_DIR}/r3d_golden 2)
+    set_tests_properties(r3d_hr_smooth PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 1800 DEPENDS render3d_golden PASS_REGULAR_EXPRESSION "r3d-smooth OK")
+    add_test(NAME r3d_hr_smooth_realpath COMMAND Python3::Interpreter ${CMAKE_CURRENT_SOURCE_DIR}/../port/notes/e35/smooth_realpath.py
+             $<TARGET_FILE:f117> ${CMAKE_CURRENT_SOURCE_DIR}/../Game ${CMAKE_CURRENT_BINARY_DIR}/r3d_smooth_realpath)
+    set_tests_properties(r3d_hr_smooth_realpath PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 1800 PASS_REGULAR_EXPRESSION "r3d-smooth-realpath OK")
+endif()
+
 # ENH: every faithful test runs with the enhancements off (F117_CLASSIC acts as --classic for the Python drivers' own command lines).
 get_property(F117_ALL_TESTS DIRECTORY PROPERTY TESTS)
 foreach(t ${F117_ALL_TESTS})
