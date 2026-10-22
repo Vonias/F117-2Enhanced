@@ -177,7 +177,6 @@ else()
     message(WARNING "Python 3 not found: the gen_*_current tests are not registered")
 endif()
 
-# ENH: the launcher is not part of the setup (PLAN.md S5.1 adds one from TestDrive3Enhanced/FS1Enhanced).
 
 # ENH: S2.1, the canvas geometry and the compositor (no game files needed): with empty layers the canvas equals the classic frame scaled N x N.
 add_test(NAME compose COMMAND f117 --compose-test)
@@ -271,3 +270,13 @@ foreach(t ${F117_ALL_TESTS})
         set_property(TEST ${t} APPEND PROPERTY ENVIRONMENT F117_CLASSIC=1)
     endif()
 endforeach()
+
+# ENH: S5.1, the launcher (f117-enhanced-launcher.exe, wxWidgets 3.2, built beside f117-enhanced.exe). -DF117_LAUNCHER=OFF skips it.
+option(F117_LAUNCHER "Also build the launcher, f117-enhanced-launcher (wxWidgets)" ON)
+if(F117_LAUNCHER)
+    add_subdirectory(launcher)
+    if(Python3_Interpreter_FOUND)
+        add_test(NAME launcher_args COMMAND Python3::Interpreter ${CMAKE_CURRENT_SOURCE_DIR}/launcher/test_args.py
+                 $<TARGET_FILE:f117elauncher> ${CMAKE_CURRENT_BINARY_DIR}/launcher_args)
+    endif()
+endif()
