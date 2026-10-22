@@ -161,6 +161,7 @@ static void layers_alloc(void)
 {
     if (enh_hr.on) fprintf(stderr, "[enh] the layers were reallocated inside a 3D pass\n");   /* S3.4 fix: must never happen (the test greps for it) */
     enh_hr.night = NULL;                               /* S3.6 */
+    hr_night_forget();
     enh_hr.on = enh_hr.have = false;                   /* S3.4 fix: the hr pass context points into the old layers: void it (A17E, the next hooks see no pass) */
     size_t px = (size_t)enh_cv.lw * (size_t)enh_cv.lh;
     layers_free();
@@ -419,6 +420,7 @@ void enh_wide_clear_outside(void)
 void enh_flip(unsigned bytes)
 {
     size_t n = bytes < PAGE_PIXELS ? bytes : PAGE_PIXELS;
+    hr_night_late();                                                  /* S3.6 fix 2: the night window's pixels written after its pass */
     if (!enh_sbx) { held_promote(); present_hold = false; }          /* S3.4: the wide picture of this frame goes on screen with it (fix 4: the held picture is released) */
     memcpy(sh_shown, sh_work, n * sizeof(Shadow));
     if (layer_px) {
@@ -435,7 +437,7 @@ void enh_flip(unsigned bytes)
 /* the shadow plane and the 3D / vector layers being composed; S3.4: l3h / lvh = the wide picture (held): its 3D layer inside the frame rectangle hx0..hx1, hy0..hy1
  * (frame px: the 3D window of its main pass) and everywhere outside the frame, its vector layer outside the frame; cls (test aid): per canvas pixel what it shows */
 typedef struct { const Shadow *sh; const u16 *l3, *lv; const u16 *l3h, *lvh; int hx0, hy0, hx1, hy1; u8 *cls; bool blend;
-                 const u8 *n3, *n3h; } ComposeSrc;   /* blend: S3.5, pal is a real palette; n3 / n3h: S3.6, the night planes of l3 / l3h (NULL = none) */
+                 const u8 *n3, *n3h; u8 *ndo; } ComposeSrc;   /* ndo (test aid): per canvas pixel the night value the 3D pixel had (0 = none / not 3D) */   /* blend: S3.5, pal is a real palette; n3 / n3h: S3.6, the night planes of l3 / l3h (NULL = none) */
 
 /* S3.5 (DESIGN 2.11): a 3D layer pixel; with a blend code (bits 10..15, --smooth-shading only) the mix of its colour and the neighbour entry of the same 16-entry ramp */
 static inline u32 l3_rgb(const u32 *pal, u16 l, bool blend)
@@ -480,7 +482,7 @@ static void compose_canvas(u32 *out, const u8 *idx, const u16 *sidx, const u32 *
             for (int x = 0; x < lw; x++) {
                 if (in_rows && x >= fx && x < fx + 320 * n) { x = fx + 320 * n - 1; continue; }
                 if (v && (v[x] & 0x100)) { o[x] = pal[v[x] & 255]; if (c) c[x] = CLS_VEC; }
-                else if (l[x] & 0x100) { o[x] = l3_rgb(pal, l[x], cs->blend); if (nl) o[x] = l3_night(o[x], nl[x]); if (c) c[x] = CLS_WORLD; }
+                else if (l[x] & 0x100) { o[x] = l3_rgb(pal, l[x], cs->blend); if (nl) o[x] = l3_night(o[x], nl[x]); if (c) c[x] = CLS_WORLD; if (cs->ndo && nl) cs->ndo[(size_t)y * lw + x] = nl[x]; }
             }
         }
     }
@@ -496,6 +498,18 @@ static void compose_canvas(u32 *out, const u8 *idx, const u16 *sidx, const u32 *
                 if (!layers || !r || r->src == SRC_NONE || r->val != v) {
                     for (int kx = 0; kx < n; kx++) o[kx] = pal[v];
                     if (co) memset(co + x * n, CLS_ART, (size_t)n);
+                    if (layers && v >= 0x70 && v <= 0x8F) {                  /* S3.6 fix 2: a sky / ground band colour (only the 3D backdrop draws them) shown as its 1x
+                                                                              * page pixel inside a night window (the record lost, e.g. a 1x write after the pass): the factor
+                                                                              * of its place, like the 3D layer around it */
+                        const size_t at = (size_t)(fy + y * n + ky) * lw + (size_t)(fx + x * n);
+                        const u8 *N = hrow && x >= cs->hx0 && x <= cs->hx1 ? cs->n3h : cs->n3;
+                        if (N) for (int kx = 0; kx < n; kx++) {
+                            o[kx] = l3_night(o[kx], N[at + kx]);
+                            if (cs->ndo && N[at + kx] && N[at + kx] != HR_NIGHT_LIT) cs->ndo[at + kx] = 3;   /* test aid: a band pixel shown from the page */
+                        }
+                    }
+                    if (cs->ndo && r && r->src == SRC_3D)                    /* S3.6 test aid: a 3D record the page no longer matches (shown as the 1x pixel) */
+                        for (int kx = 0; kx < n; kx++) if (!cs->ndo[(size_t)(fy + y * n + ky) * lw + (size_t)(fx + x * n + kx)]) cs->ndo[(size_t)(fy + y * n + ky) * lw + (size_t)(fx + x * n + kx)] = 1;
                     continue;
                 }
                 const size_t at = (size_t)(fy + y * n + ky) * lw + (size_t)(fx + x * n);
@@ -507,6 +521,7 @@ static void compose_canvas(u32 *out, const u8 *idx, const u16 *sidx, const u32 *
                         u16 l = L3[at + kx];
                         o[kx] = (l & 0x100) ? l3_rgb(pal, l, cs->blend) : pal[v];
                         if (N3) o[kx] = l3_night(o[kx], N3[at + kx]);     /* also a 1x pixel of the scene (the pass end gave it a factor) */
+                        if (cs->ndo && N3) cs->ndo[at + kx] = N3[at + kx];
                         if (co) co[x * n + kx] = (l & 0x100) ? CLS_WORLD : CLS_WORLD1;
                     }
                     continue;
@@ -523,7 +538,12 @@ static void compose_canvas(u32 *out, const u8 *idx, const u16 *sidx, const u32 *
                 for (int kx = 0; kx < n; kx++) {
                     u16 lv = lvec_shown[at + kx];
                     u16 l3 = L3[at + kx];
-                    o[kx] = (lv & 0x100) ? pal[lv & 255] : (r->under3d && (l3 & 0x100)) ? l3_night(l3_rgb(pal, l3, cs->blend), N3 ? N3[at + kx] : 0) : pal[r->under];
+                    o[kx] = (lv & 0x100) ? pal[lv & 255] : (r->under3d && (l3 & 0x100)) ? l3_rgb(pal, l3, cs->blend) : pal[r->under];
+                    if (!(lv & 0x100) && r->under3d && N3) {                /* S3.6: the 3D pixel under a vector record (layer or 1x) */
+                        o[kx] = l3_night(o[kx], N3[at + kx]);
+                        if (cs->ndo) cs->ndo[at + kx] = N3[at + kx];
+                    }
+                    else if (!(lv & 0x100) && N3 && N3[at + kx] && cs->ndo) cs->ndo[at + kx] = 2;   /* test aid: the page value under a vector record in the night window */
                     if (co) co[x * n + kx] = (lv & 0x100) ? CLS_VEC : (r->under3d && (l3 & 0x100)) ? CLS_WORLD : r->under3d ? CLS_WORLD1 : CLS_ART;
                 }
             }
@@ -570,7 +590,7 @@ void enh_compose_work(u32 *out, const u8 *page, const u32 *pal, bool blend)
 {
     static u16 ident[PAGE_PIXELS];
     if (ident[1] == 0) for (int i = 0; i < PAGE_PIXELS; i++) ident[i] = (u16)i;
-    const ComposeSrc cs = { sh_work, l3d_work, lvec_work, NULL, NULL, 0, 0, 0, 0, NULL, blend, blend ? l3n_work : NULL, NULL };   /* S3.5: blend = pal is the DAC; S3.6 */
+    const ComposeSrc cs = { sh_work, l3d_work, lvec_work, NULL, NULL, 0, 0, 0, 0, NULL, blend, blend ? l3n_work : NULL, NULL, NULL };   /* S3.5: blend = pal is the DAC; S3.6 */
     compose_canvas(out, page, ident, pal, true, &cs);
 }
 
@@ -693,7 +713,7 @@ static void probe_flip(void)
                         }
                     }
             }
-        fprintf(f, " spd=%d alt=%d vs=%d night=%d", (s16)DSW(0xB168), (s16)DSW(0x2DF4), (s16)DSW(0xE55A), DSW(0x3658));
+        fprintf(f, " spd=%d alt=%d vs=%d night=%d nlate=%ld", (s16)DSW(0xB168), (s16)DSW(0x2DF4), (s16)DSW(0xE55A), DSW(0x3658), hr_night_late_count());
         fprintf(f, " vstale=%ld vstalebox=%d,%d,%d,%d vstalecol=%d/%d", vmis, bx0, by0, bx1, by1, mcol, mv);
     }
     fprintf(f, "\n");
@@ -714,9 +734,11 @@ static void probe_flip(void)
             }
             static u16 ident[PAGE_PIXELS];
             for (int i = 0; i < PAGE_PIXELS; i++) ident[i] = (u16)i;
+            u8 *cls = calloc(layer_px, 1), *ndo = calloc(layer_px, 1);     /* S3.6 test aid: the pixel classes and night values follow the two pictures */
             if (img) {
                 ComposeSrc cs;
                 compose_src_live(&cs);                                /* S3.4: as presented, with the wide picture */
+                cs.cls = cls; cs.ndo = ndo;
                 compose_canvas(img, pg, ident, pal, true, &cs);
                 char p[1100];
                 snprintf(p, sizeof p, "%s_%04d.raw", enh.mfd_probe, frame);
@@ -726,13 +748,15 @@ static void probe_flip(void)
                     fwrite(hd, 4, 2, o);
                     fwrite(img, 4, layer_px, o);
                     static Shadow none[PAGE_PIXELS];                       /* no records: the 1x page scaled N x N, the classic picture of the same frame */
-                    const ComposeSrc c1 = { none, l3d_shown, lvec_shown, NULL, NULL, 0, 0, 0, 0, NULL, false, NULL, NULL };
+                    const ComposeSrc c1 = { none, l3d_shown, lvec_shown, NULL, NULL, 0, 0, 0, 0, NULL, false, NULL, NULL, NULL };
                     compose_canvas(img, pg, ident, pal, true, &c1);
                     fwrite(img, 4, layer_px, o);
+                    if (cls && ndo) { fwrite(cls, 1, layer_px, o); fwrite(ndo, 1, layer_px, o); }
                     fclose(o);
                 }
                 free(img);
             }
+            free(cls); free(ndo);
         }
         t = *end == ',' ? end + 1 : end;
     }

@@ -113,6 +113,9 @@ void hr_shade_regions(void (*add)(void *p, size_t n));
 enum { HR_NM_NONE, HR_NM_OBJ, HR_NM_LIT, HR_NM_KEEP };   /* how hr_put sets the factor: none (filled at the pass end), the object's, a light, a given value */
 void hr_night_pass_begin(bool main_win);           /* a pass opens: enh_hr.night = the plane or NULL */
 void hr_night_pass_end(void);                      /* the main pass ends: the pixels left without a factor get the factor of their place */
+void hr_night_late(void);                          /* fix 2: ... and those written after it ended (at the next pass, at the flip) */
+long hr_night_late_count(void);                    /* test aid: the pixels hr_night_late gave a factor */
+void hr_night_forget(void);                        /* the layers were reallocated */
 void hr_night_object(void);                        /* hr_shade_object: the factor of the object being drawn, from its depth */
 void hr_night_queue(int slot);                     /* hr_shade_queue: ... of DDFE record slot */
 void hr_night_dequeue(int slot);                   /* hr_shade_dequeue */

@@ -186,6 +186,28 @@ void enh_frame_begin(void)
         DSW(0x3658) = 1;
         if (tn == 2 && !was) pal_flight_load();   /* S3.6: F117_TEST_NIGHT=2 also loads the night palette (B) as a night mission does */
     }
+    if (!enh_sbx && !enh.classic) {          /* S3.6 test aid (F117_TEST_POSE=N, real-path tests only): at VGAME frame N the aircraft is put in level, banked
+                                              * flight at 3000 ft, 380 kt over the sea north of Tripoli (as F117_VGAME_DIVE, without the dive), so the sky shows */
+        static int pose_at = -2, pose_hdg = -1;
+        if (pose_at == -2) {
+            const char *e = getenv("F117_TEST_POSE");      /* N[,heading word] */
+            pose_at = e && *e ? atoi(e) : -1;
+            const char *c = e ? strchr(e, ',') : NULL;
+            if (c) pose_hdg = (int)strtol(c + 1, NULL, 0);
+        }
+        if (pose_at >= 0 && pose_at-- == 0) {
+            DSL(0xBA10) = 4288u * 32;
+            DSL(0xC02A) = (0x8000u - 13700u) * 32;
+            DSW(0x2DF6) = 3000;
+            DSW(0xB052) = 380 * 27;
+            DSW(0x2DFE) = DSW(0xB170) = 100;
+            DSW(0x9B04) |= 1;
+            DSW(0x2DF0) = 0x0200;                /* nose slightly up */
+            DSW(0x2DF2) = 0x1800;                /* banked about 34 degrees */
+            if (pose_hdg >= 0) DSW(0x2DEE) = (u16)pose_hdg;
+            DSB(0x2DFB) = 1;
+        }
+    }
     if (enh.sandbox_hash[0]) hash_line();
     frame_passes = 0;
     img_a.valid = false;

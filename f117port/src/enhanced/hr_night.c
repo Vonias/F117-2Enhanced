@@ -39,8 +39,11 @@ static bool lut_ready;
 /* the hr state of the frame being drawn (in the display-pass snapshot): the geometry of the pass (t = ax X + ay Y + c0 - H, layer px; f the focal, fa = f alt),
  * the far depth of the object being drawn (< 0 = none) and of the queued records, the lights condition */
 static struct { bool geo; double ax, ay, c0, f, fa; float obj; float queued[50]; u8 cond, light; } st;
+/* the window of the last night pass and its geometry, for the pixels written after its end (fix 2: hr_night_late) */
+static struct { bool valid; double ax, ay, c0, f, fa; s32 xmin, ymin, xmax, ymax, lw, lh; bool hole; s32 hole_x0, hole_x1, hole_y; } last;
+static long late_px;
 
-void hr_night_regions(void (*add)(void *p, size_t n)) { add(&st, sizeof st); }
+void hr_night_regions(void (*add)(void *p, size_t n)) { add(&st, sizeof st); add(&last, sizeof last); add(&late_px, sizeof late_px); }
 
 static u8 to_nd(double k)
 {
@@ -76,6 +79,7 @@ static inline u8 pixel_nd(s32 x, s32 y) { const double t = t_of(x, y); return t 
 
 void hr_night_pass_begin(bool main_win)
 {
+    hr_night_late();                               /* fix 2: what was written after the last night pass ended */
     enh_hr.night = NULL;
     memset(&st, 0, sizeof st);
     st.obj = -1;
@@ -167,4 +171,35 @@ void hr_night_pass_end(void)
         for (s32 x = enh_hr.xmin < 0 ? 0 : enh_hr.xmin; x <= enh_hr.xmax && x < enh_hr.lw; x++)
             if (!nrow[x] && !HR_IN_HOLE(x, y)) nrow[x] = pixel_nd(x, y);
     }
+    last.valid = true;
+    last.ax = st.ax; last.ay = st.ay; last.c0 = st.c0; last.f = st.f; last.fa = st.fa;
+    last.xmin = enh_hr.xmin; last.ymin = enh_hr.ymin; last.xmax = enh_hr.xmax; last.ymax = enh_hr.ymax; last.lw = enh_hr.lw; last.lh = enh_hr.lh;
+    last.hole = enh_hr.hole; last.hole_x0 = enh_hr.hole_x0; last.hole_x1 = enh_hr.hole_x1; last.hole_y = enh_hr.hole_y;
 }
+
+/* fix 2: the 3D layer pixels of the last night window written after its pass ended (1x writes of the overlay pass and the rest of the frame that the hr back
+ * end does not mirror, stamped with factor 0) get the factor of their place too; at the next pass and at the flip. Lights of the overlay pass keep 255. */
+void hr_night_late(void)
+{
+    if (!last.valid) return;
+    last.valid = false;
+    u8 *nd = enh_layer_night();
+    const u16 *lay = enh_layer3d();
+    if (!nd || !lay || last.lw != enh_cv.lw || last.lh != enh_cv.lh) return;
+    const double ax = st.ax, ay = st.ay, c0 = st.c0, f = st.f, fa = st.fa;
+    st.ax = last.ax; st.ay = last.ay; st.c0 = last.c0; st.f = last.f; st.fa = last.fa;
+    for (s32 y = last.ymin < 0 ? 0 : last.ymin; y <= last.ymax && y < last.lh; y++) {
+        u8 *nrow = nd + (size_t)y * last.lw;
+        const u16 *lrow = lay + (size_t)y * last.lw;
+        for (s32 x = last.xmin < 0 ? 0 : last.xmin; x <= last.xmax && x < last.lw; x++) {
+            if (nrow[x] || !(lrow[x] & 0x100)) continue;
+            if (last.hole && y >= last.hole_y && x >= last.hole_x0 && x <= last.hole_x1) continue;
+            nrow[x] = pixel_nd(x, y);
+            late_px++;
+        }
+    }
+    st.ax = ax; st.ay = ay; st.c0 = c0; st.f = f; st.fa = fa;
+}
+
+long hr_night_late_count(void) { return late_px; }
+void hr_night_forget(void) { last.valid = false; }

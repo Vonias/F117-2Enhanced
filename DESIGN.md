@@ -319,6 +319,13 @@ True night (as built; `src/enhanced/hr_night.c`):
   the scene draws (A17E: explosions, tracers, flares, target boxes) get 255. Everything else the scene pass leaves without a factor (smoke and the other sprites,
   the far dots, 1x stamps, 3D records shown as their 1x pixel) gets the factor of its place (sky / ground) at the end of the pass (`hr_night_pass_end`); before
   fix 1 those stayed at their original brightness (the bright dots and dotted lines U1 saw in the black sky).
+* **Fix 2 (dots at the frame's right edge, U1 again).** The dots were 1x-pixel blocks of the undarkened sky colour: 3D-world pixels that reach the screen
+  without the 3D layer's factor. Three such paths are closed: (a) the 3D pixel under a vector (HUD) record whose hr line left that block empty is darkened
+  like the layer (before: the 1x value under it, as is); (b) 3D-layer pixels of the night window written after its pass ended (1x stamps of later writers)
+  get their place's factor at the next pass and at the flip (`hr_night_late`); (c) a sky / ground band colour (70h..8Fh, drawn only by the 3D backdrop) shown
+  as its 1x page pixel inside a night window (a lost record) gets that window's factor. Only the band colours are covered by (c), so cockpit art and HUD text
+  over the window stay unchanged. The headless runs (banked level flight over the sea, `F117_TEST_POSE`, at 1167 x 821 auto N, 1459 x 1026 N = 4 and
+  1920 x 1080) show none of these pixels, so which path the user's run took is not confirmed; the test counts all three per frame and at the frame edges.
 * **curve(D)** = `K_FAR + (K_NEAR - K_FAR) exp(-D / D_LIT)`, monotonic: near ground and objects keep about half their night brightness, beyond a few D_LIT they
   are near black, sooner than the original's ramp. **Tuned constants** (hr_night.c): `K_NEAR = 0.50`, `K_FAR = 0.06`, `D_LIT = 3000` depth units (k = 0.37 at
   1000, 0.22 at 3000, 0.12 at 6000, 0.075 at 10000; the object range at detail 3 is 13332), `SKY_HORIZON = 0.30`, `SKY_TOP = 0.10`, `SKY_E = 0.15` (k = 0.17 at
