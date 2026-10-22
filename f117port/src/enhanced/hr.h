@@ -34,6 +34,7 @@ typedef struct HrCtx {
     bool wide, hole;
     s32 wx, wy, e2dx, e2dy;
     s32 hole_x0, hole_x1, hole_y;
+    u8 *night;                    /* S3.6: the night plane of a true-night pass (hr_night.c), NULL otherwise */
 } HrCtx;
 
 /* S3.4: the panel hole of a wide main pass */
@@ -104,6 +105,19 @@ void hr_shade_colour(u16 colour);                  /* r3d_setcolor_M (1359:01D4)
 u16  hr_shade_code(u16 colour);                    /* the blend code of a fill / line in the colour word (DS:85D6 after set_colour_M); 0 = not a shaded colour */
 void hr_band_blend(s16 H, const s16 *sky, const s16 *gnd);   /* hr_sky_ground after the bands: the per-pixel code of the band pixels */
 void hr_shade_regions(void (*add)(void *p, size_t n));
+
+/* ---- S3.6 true night (hr_night.c, DESIGN 2.12): the night plane (u8 per layer pixel, 0 = as the original, else the brightness factor / 256), only in the main 3D window
+ * of a night mission with --true-night */
+void hr_night_pass_begin(bool main_win);           /* a pass opens: enh_hr.night = the plane or NULL */
+void hr_night_object(void);                        /* hr_shade_object: the factor of the object being drawn, from its depth */
+void hr_night_queue(int slot);                     /* hr_shade_queue: ... of DDFE record slot */
+void hr_night_dequeue(int slot);                   /* hr_shade_dequeue */
+void hr_night_cond(u16 v);                         /* r3d_face_list: a condition on variable v holds (10 / 11 = the lights) */
+void hr_night_elem(void);                          /* r3d_face_list: an element (polygon / lines) begins */
+u8   hr_night_fill(void);                          /* the factor of the object fill / line being drawn (0 = none) */
+bool hr_night_lit(u8 c);                           /* a light colour: never darkened */
+void hr_night_backdrop(s16 H);                     /* hr_sky_ground after the backdrop: the sky / ground factors of its pixels */
+void hr_night_regions(void (*add)(void *p, size_t n));
 
 /* ---- inside the back end */
 typedef struct HrEdge {

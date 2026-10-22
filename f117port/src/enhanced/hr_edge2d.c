@@ -390,16 +390,16 @@ void hr_sky_ground(void *ctx)
     (void)ctx;
     if ((u16)seg_get() != enh_hr.seg) return;           /* 1001 draws on MGRAPHIC's current page (the TV camera's may be another): stamped */
     if (!tabs_ready()) return;
-    if ((s8)DSB(0x98DE) < 3) { hz_draw_hr(); return; }
-    bool flag = DSW(0x4360) && DSW(0x43B2);
-    s16 sky[16], gnd[16];
-    for (int i = 0; i < 16; i++) sky[i] = (s16)DSW(0x0D22 + 2 * i);
     s16 cB = (s16)DSW(0x4988);
     if (cB < 0x200) cB = 0x200;
     s16 H = (s16)(((s32)(s16)DSW(0x4986) * 256) / cB);
     u8 z = DSB(0x433A);
     if (z) H = (z & 0x1F) < 16 ? (s16)(u16)((u16)H << (z & 0x1F)) : 0;
     if (DSB(0x294B)) H >>= 1;
+    if ((s8)DSB(0x98DE) < 3) { hz_draw_hr(); hr_night_backdrop(H); /* S3.6 */ return; }
+    bool flag = DSW(0x4360) && DSW(0x43B2);
+    s16 sky[16], gnd[16];
+    for (int i = 0; i < 16; i++) sky[i] = (s16)DSW(0x0D22 + 2 * i);
     bands_hr(H, sky, false, flag);
     s16 alt = (s16)DSW(0x4980);
     u16 c0 = (u16)(alt / 0x200);
@@ -407,4 +407,5 @@ void hr_sky_ground(void *ctx)
     for (int i = 1; i < 16; i++) gnd[i] = (s16)(u16)((u16)(alt / ((16 - i) << 5)) - c0);
     bands_hr(H, gnd, true, flag);
     if (!flag) hr_band_blend(H, sky, gnd);               /* S3.5: the position of each band pixel inside its band (--smooth-shading) */
+    if (!flag) hr_night_backdrop(H);                     /* S3.6: the sky / ground night factors (--true-night) */
 }

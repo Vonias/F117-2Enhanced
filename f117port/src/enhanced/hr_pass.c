@@ -30,6 +30,7 @@ void hr_sandbox_regions(EnhRegionAdd add)
 {
     add(&enh_hr, sizeof enh_hr); add(&enh_hr_pt, sizeof enh_hr_pt); add(&last_seg, sizeof last_seg);
     hr_clip_regions(add); hr_edge2d_regions(add); hr_raster_regions(add); hr_shade_regions(add);   /* S3.5 */
+    hr_night_regions(add);                                                                                             /* S3.6 */
 }
 
 static void trace_put(s32 v)
@@ -139,6 +140,7 @@ void enh_r3d_viewport(u16 vp)
     enh_hr.have = false;
     hr_obj_pass_begin();
     hr_shade_pass_begin();                                                /* S3.5 */
+    hr_night_pass_begin(main_win);                                        /* S3.6 */
     if (!enh_page_tracked(seg)) return;
     if (!keep) enh_pass_clear(x0, y0, x1, y1);
     u16 *layer = enh_layer3d();
@@ -388,6 +390,17 @@ static void frame_check(const char *id)
                 fwrite(hd, 4, 2, f);
                 fwrite(img, 4, (size_t)lw * (size_t)lh, f);
                 fclose(f);
+            }
+            const u8 *nd = enh_layer_night();                       /* S3.6 test aid: the night plane as DIR/<id>.nd (s32 lw, lh, lw * lh u8) */
+            if (nd && enh_true_night_on()) {
+                snprintf(path, sizeof path, "%s/%s.nd", enh.hr_dump, id);
+                f = fopen(path, "wb");
+                if (f) {
+                    s32 hd[2] = { lw, lh };
+                    fwrite(hd, 4, 2, f);
+                    fwrite(nd, 1, (size_t)lw * (size_t)lh, f);
+                    fclose(f);
+                }
             }
         }
     }

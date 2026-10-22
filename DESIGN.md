@@ -278,6 +278,49 @@ Smooth (as built):
 * Option off, `--classic`: no code is ever written; the compositor then shows exactly the indices (the golden / hr-check tests). The sim and the 1x page are not touched (hooks
   only store hr state). Tests: `port/notes/e35/` (section 2.11 numbers in PLAN.md S3.5 status).
 
+### 2.12 True night (S3.6, option `--true-night`, default off)
+How the original does night (simflow.md 0000:00F0, 4857, 4d43, cba0; FORMATS.md "Flight palette"; render3d.md 04DA, 1088:0120):
+* **Only a palette.** START sets comm[33h] (night: 1 if a target type is 4, else random, 70 % / 90 %) and the clock base (18:00 / 06:00); VGAME copies it to
+  `[3658]` and `[43B0] = !night`. `pal_flight_load` (1088:0006) loads palette **B** (DS:194A) at night and **C** (DS:1C4A) by day (with `[43AE]` = 1 after the
+  debug key Alt-N, which also flips `[3658]`: C at night, A (DS:164A, bright) by day). `sim_reset_clock_palette` pre-steps the DAC `2 h` units toward the target
+  (night C, day A; h = the start clock index 0..15) and `pal_time_of_day_step` moves one range (10h-4Fh, 60h-9Fh, A0h-CFh, D0h-FFh) one unit toward it every
+  16 s (each range one unit per 64 s): **dusk** (B -> C, darker) at night, **dawn** (C -> A, brighter) by day. Nothing else in the renderer reads `[3658]` except
+  the visual-ID range (8 units by day, 4 at night) and the 7898 bar colour; the light faces of the models (condition var 10 / 11 = `[C042]` / `[C044]` = `[9874]`)
+  are drawn by day and night alike (`DS:11E2` has no writer, so the lights value is always 1).
+* **Night palette B** (6-bit): sky ramp 80h + i from (31,16,30) at the horizon to (8,11,17) at the top; ground ramp 70h + i from (0,0,0) at the horizon band to
+  (0,20,0) near; the shaded ramps A0h..FFh start at black (the far / haze entry) and reach only (14,20,0), (0,22,20), (26,20,0), (26,0,0), (12,12,12), (14,20,29);
+  60h..6Fh (AND 6Fh faces) blue. C is darker still (ground at most (0,12,0)). **Unchanged at night**: 00h..0Fh (the EGA colours), 50h..5Fh (the fire / explosion
+  ramp), 92h, 93h (63,0,0), 94h, 95h (63,63,46), 97h (0,63,0); 96h is grey in A and yellow (50,44,0) in B - the light colours. Of the model faces, 8991 of the 9387
+  light elements (var 10 / 11) are lines in 94h, the rest E6h, 92h, 07h, 13h, CBh, D9h; the other unshaded faces use 92h (lines), 0Dh, 90h..9Fh, 06h, 03h, 0Fh.
+* So distance at night is the same as by day: the ground bands (band i = ground ring (16 - i) 8192 units: `G_i + alt/512 = alt / (32 (16 - i))` at focal 256) and
+  the object shade (a ramp step per 1024 depth units minus 512 per size class) fade to the black ramp bases; the far ground at the horizon is already black.
+
+True night (as built; `src/enhanced/hr_night.c`):
+* **Gate.** The option is on, not `--classic`, the pass is the main 3D window (x0 = 0, y0 = 0, x1 = 319: cockpit, full screen, outside views, the S3.4 wide
+  pass) and `[3658]` != 0 and not the map (`[7D5E]`), when the pass opens. The TV / FLIR camera, the map MFD, HUD, MFDs, cockpit art, lamps and menus never get it
+  (other passes, the vector layer or page pixels). Day missions and Alt-N to day: nothing changes.
+* **The night plane.** A third canvas plane `u8[Lw*Lh]` beside the 3D layer (work / shown / wide picture / window store / display-pass snapshot): 0 = as the
+  original, else the brightness factor `k = nd / 256` of that layer pixel. It is written only by the hr back end in a night pass and cleared with the layer;
+  every other writer (sprites, smoke and explosion bitmaps, the far dots, tracers, target boxes, 1x stamps, the FLIR tint) leaves or writes 0. The layer word
+  (index, written / stamped bits, the S3.5 blend code) is untouched, so with the option off, `--classic` or by day the picture is the same bytes as before.
+* **Backdrop** (after 1442 at every detail level, every written pixel of the pass window, not in the S3.4 hole): from the band geometry of 2.11, `t(q)` and the
+  horizon `H` (1x t-units, focal `f = 256 << [433A]`, halved with `[294B]`). Above the horizon (or a sky colour 80h..8Fh): the elevation `e = (t - H) / f`, `k_sky =
+  SKY_TOP + (SKY_HORIZON - SKY_TOP) exp(-e / SKY_E)`. Below (or a ground colour): the ground distance `D = 1 / (G / (f alt) + 1 / 131072)`, `G = H - t` (the
+  band formula solved for a continuous ring, so D = (16 - i) 8192 at the band edges and 131072 on the horizon line; works at low altitude where the bands collapse),
+  `k = curve(D)`. AND / OR ground faces (roads, fields, water: FEh / FDh) keep the factor of the backdrop pixel they recolour.
+* **Objects** (terrain tiles, scenery, sites, aircraft: the shade hooks of 2.11 E7AC / DDFE / DF08, also without `--smooth-shading`): the depth `D = C / 65536 -
+  512 class` (the depth the original shade uses), `k = curve(D)` for every fill / line / dither / stipple of the object, except (a) a face or line under a lights
+  condition (var 10 / 11; hooks in `r3d_face_list`) and (b) a pixel whose colour is a light colour: 00h..0Fh, 50h..5Fh, 90h..97h (factor 0 = unchanged).
+* **curve(D)** = `K_FAR + (K_NEAR - K_FAR) exp(-D / D_LIT)`, monotonic: near ground and objects keep about half their night brightness, beyond a few D_LIT they
+  are near black, sooner than the original's ramp. **Tuned constants** (hr_night.c): `K_NEAR = 0.50`, `K_FAR = 0.06`, `D_LIT = 3000` depth units (k = 0.37 at
+  1000, 0.22 at 3000, 0.12 at 6000, 0.075 at 10000; the object range at detail 3 is 13332), `SKY_HORIZON = 0.30`, `SKY_TOP = 0.10`, `SKY_E = 0.15` (k = 0.17 at
+  e = 0.25, i.e. 14 deg up). Night B: the near ground (0,80,0) RGB -> (0,40,0) at the aircraft, (0,18,0) at 3000; the horizon sky (124,64,120) -> (37,19,36),
+  the top (32,44,68) -> (3,4,7).
+* **Compositor.** A 3D layer pixel with `nd != 0` shows `(rgb * nd + 128) >> 8` of its colour from the live DAC (after the S3.5 mix), so palette fades, the
+  dusk drift, the explosion flashes and Alt-N still apply; the compositor's index-only paths (the hr check `.cmp`) ignore it.
+* Rendering only: the hooks store hr state; the sim, the 1x page and the DAC are untouched. Option `--true-night` / `--no-true-night` (and F117_ENH_ARGS), launcher
+  switch S5.1. Tests: `port/notes/e36/` (numbers in PLAN.md S3.6 status).
+
 ## 3 (b) The wider view
 
 ### 3.1 Canvas geometry (window of any aspect)
@@ -511,6 +554,7 @@ inputs) run only from `host_pump` in real time, never in a display pass: sound t
 | `r3d_draw_terrain` | `render3d/r3d_terrain.c` | wide cell list in wide display passes (`enh_wide_cell`) | S3.4 |
 | `obj_overlay_frame` (S2 .. S3), `r3d_project_point` | `sim/sim_objovl.c` | `enh_wide_ovl`, `enh_wide_xfield`, `enh_wide_range` (3.5) | S3.4 |
 | `sim_quit_requester`, `sim_boss_screen` | `sim/sim_input.c` | `enh_menu` (pillarboxed while up) | S3.4 |
+| `r3d_face_list` | `render3d/r3d_object.c` | `hr_night_cond` (a lights condition holds), `hr_night_elem` (an element begins or is skipped) (2.12) | S3.6 |
 | `frame_loop_body` | `sim/sim_main.c` | `enh_frame_begin()` before `view_frame` | S2.4 |
 | `frame_floor` wait loop, `frame_delay` | `sim/sim_main.c` | `enh_idle()` → display pass; return at once in sandbox | S2.4, S4.1 |
 | `sim_snd_cmd`, `sim_snd_noise` | `sim/sim_stubs.c` | no-op in sandbox | S2.4 |

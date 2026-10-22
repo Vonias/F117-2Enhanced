@@ -249,6 +249,21 @@ if(Python3_Interpreter_FOUND)
     set_tests_properties(r3d_hr_smooth_realpath PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 1800 PASS_REGULAR_EXPRESSION "r3d-smooth-realpath OK")
 endif()
 
+# ENH: S3.6, true night (--true-night, DESIGN 2.12). r3d_hr_night (port/notes/e36/night_scenes.py): the golden scenes as a day and as a night mission (palette B),
+# option off against on (also with --smooth-shading, also on a 16:9 wide canvas): by day nothing changes; at night every pixel without a night factor is identical
+# (HUD, MFDs, art, the TV and map scenes, sprites, lights), every darkened one is the option-off colour times the factor, the factors on the curve and monotonic down
+# the band columns, the 3D world darker. r3d_hr_night_realpath (port/notes/e36/night_realpath.py): the sandbox-hash chain day, night (F117_TEST_NIGHT=2) and night
+# with smooth shading, option off against on: the sim identical; the view sweep at night and by day: no crash, the same frames, darker at night, unchanged by day.
+# (By hand: add `--png work/e36` to either.)
+if(Python3_Interpreter_FOUND)
+    add_test(NAME r3d_hr_night COMMAND Python3::Interpreter ${CMAKE_CURRENT_SOURCE_DIR}/../port/notes/e36/night_scenes.py
+             $<TARGET_FILE:f117> ${CMAKE_CURRENT_SOURCE_DIR}/../Game ${CMAKE_CURRENT_BINARY_DIR}/r3d_night ${CMAKE_CURRENT_BINARY_DIR}/r3d_golden 2)
+    set_tests_properties(r3d_hr_night PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 1800 DEPENDS render3d_golden PASS_REGULAR_EXPRESSION "r3d-night OK")
+    add_test(NAME r3d_hr_night_realpath COMMAND Python3::Interpreter ${CMAKE_CURRENT_SOURCE_DIR}/../port/notes/e36/night_realpath.py
+             $<TARGET_FILE:f117> ${CMAKE_CURRENT_SOURCE_DIR}/../Game ${CMAKE_CURRENT_BINARY_DIR}/r3d_night_realpath)
+    set_tests_properties(r3d_hr_night_realpath PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 1800 PASS_REGULAR_EXPRESSION "r3d-night-realpath OK")
+endif()
+
 # ENH: every faithful test runs with the enhancements off (F117_CLASSIC acts as --classic for the Python drivers' own command lines).
 get_property(F117_ALL_TESTS DIRECTORY PROPERTY TESTS)
 foreach(t ${F117_ALL_TESTS})

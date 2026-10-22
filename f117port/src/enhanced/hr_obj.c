@@ -52,6 +52,7 @@ static void put3d(s32 x, s32 y, u8 c)
 {
     if (x < enh_hr.xmin || x > enh_hr.xmax || y < enh_hr.ymin || y > enh_hr.ymax || HR_IN_HOLE(x, y)) return;   /* S3.4: the hole */
     enh_hr.layer[(size_t)y * enh_hr.lw + x] = (u16)(0x100 | c);
+    if (enh_hr.night) enh_hr.night[(size_t)y * enh_hr.lw + x] = 0;   /* S3.6: sprites, dots, tracers, boxes as the original */
 }
 
 /* ---------------------------------------------------------------- hr sizes */

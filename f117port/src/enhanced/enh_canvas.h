@@ -97,6 +97,7 @@ bool enh_adi_begin(u16 seg, int colour);               /* S3.3: the ADI's horizo
 void enh_adi_end(const s16 *pts, int n);                /* ... end fills the same polygon at N x (window = DS:2293 x 2295 at the draw offset, vertices in window pixels) */
 u16 *enh_layer3d(void);
 u16 *enh_layer_vec(void);
+u8 *enh_layer_night(void);                              /* S3.6: the night plane of the 3D layer (work) */
 
 /* S2.4, the display pass (sandbox.c): the canvas state (geometry, view, route, shadow plane, the four layers) as a value. take = a deep
  * copy of the live state; copy = a deep copy; swap = the live state and *s change places (pointers only, no copy). The buffers of a
@@ -107,6 +108,7 @@ typedef struct {
     int view, route;
     void *sh_work, *sh_shown;                 /* PAGE_PIXELS shadow records each */
     u16 *l3d_work, *l3d_shown, *lvec_work, *lvec_shown;
+    u8 *l3n_work, *l3n_shown;                 /* S3.6: the night planes */
     size_t layer_px, cap;                     /* pixels in use, pixels the layer buffers hold */
 } EnhCanvasSnap;
 bool enh_canvas_snap_take(EnhCanvasSnap *d);

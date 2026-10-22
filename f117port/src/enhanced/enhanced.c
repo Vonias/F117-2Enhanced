@@ -18,13 +18,14 @@ static bool env_classic(void)
 
 bool enh_canvas_on(void) { return !enh.classic && enh.canvas && !env_classic(); }
 bool enh_smooth_on(void) { return enh.smooth_shading && enh_canvas_on(); }
+bool enh_true_night_on(void) { return enh.true_night && enh_canvas_on(); }
 bool enh_sandbox_on(void) { return !enh.classic && enh.sandbox_test > 0 && !env_classic(); }
 
 int enh_parse_arg(int argc, char **argv, int i)
 {
     if (!strcmp(argv[i], "--classic")) {              /* every enhancement off, whatever else is on the command line */
         enh.classic = true; enh.canvas = false; enh.wide = false; enh.render_scale = 0; enh.dither_fine = false; enh.hr_check = false; enh.hr_dump[0] = 0;
-        enh.sandbox_test = 0; enh.wide_test_w = enh.wide_test_h = 0; enh.smooth_shading = false;
+        enh.sandbox_test = 0; enh.wide_test_w = enh.wide_test_h = 0; enh.smooth_shading = false; enh.true_night = false;
         return 1;
     }
     if (!strcmp(argv[i], "--render-scale") && i + 1 < argc) {
@@ -41,6 +42,8 @@ int enh_parse_arg(int argc, char **argv, int i)
     }
     if (!strcmp(argv[i], "--smooth-shading")) { if (!enh.classic) enh.smooth_shading = true; return 1; }   /* S3.5 */
     if (!strcmp(argv[i], "--no-smooth-shading")) { enh.smooth_shading = false; return 1; }
+    if (!strcmp(argv[i], "--true-night")) { if (!enh.classic) enh.true_night = true; return 1; }        /* S3.6 */
+    if (!strcmp(argv[i], "--no-true-night")) { enh.true_night = false; return 1; }
     if (!strcmp(argv[i], "--compose-test")) { enh.compose_test = 1; return 1; }
     if (!strcmp(argv[i], "--wide-geometry-test")) { enh.compose_test = 2; return 1; }
     if (!strcmp(argv[i], "--dither") && i + 1 < argc) {

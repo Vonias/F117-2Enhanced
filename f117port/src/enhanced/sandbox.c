@@ -162,6 +162,11 @@ static void hash_line(void)
     cv = fnv(cv, c.sh_work, 64000 * 4); cv = fnv(cv, c.sh_shown, 64000 * 4);
     const size_t lb = c.layer_px * sizeof(u16);
     if (lb) { cv = fnv(cv, c.l3d_work, lb); cv = fnv(cv, c.l3d_shown, lb); cv = fnv(cv, c.lvec_work, lb); cv = fnv(cv, c.lvec_shown, lb); }
+    if (lb && enh_true_night_on()) {                          /* S3.6: the night planes, when not empty (an empty plane is the original picture) */
+        bool any = false;
+        for (size_t i = 0; i < c.layer_px && !any; i++) any = c.l3n_work[i] || c.l3n_shown[i];
+        if (any) { cv = fnv(cv, c.l3n_work, c.layer_px); cv = fnv(cv, c.l3n_shown, c.layer_px); }
+    }
     fprintf(hash_f, "%llu dg=%016llx comm=%016llx seed=%08x snd=%016llx opl=%llu:%016llx mem=%016llx vga=%016llx canvas=%016llx\n", hash_frame++,
             (unsigned long long)dg, (unsigned long long)cm, (unsigned)DSL(0x926E), (unsigned long long)sd, opl_n, (unsigned long long)opl_h,
             (unsigned long long)all, (unsigned long long)vg, (unsigned long long)cv);
@@ -170,12 +175,17 @@ static void hash_line(void)
 /* ---------------------------------------------------------------- hooks */
 
 static int frame_passes;
-static bool enh_test_night(void) { static int v = -1; if (v < 0) { const char *e = getenv("F117_TEST_NIGHT"); v = e && *e == '1'; } return v == 1 && !enh.classic; }
+static int enh_test_night(void) { static int v = -1; if (v < 0) { const char *e = getenv("F117_TEST_NIGHT"); v = e && (*e == '1' || *e == '2') ? *e - '0' : 0; } return enh.classic ? 0 : v; }
 static bool wide_due;          /* S3.4: this frame gets a wide display pass */
 
 void enh_frame_begin(void)
 {
-    if (enh_test_night()) DSW(0x3658) = 1;   /* S3.4 test aid (F117_TEST_NIGHT=1, real-path tests only): the night flag, so 7898 draws its bars in 0x2A */
+    const int tn = enh_test_night();
+    if (tn) {                                /* S3.4 test aid (F117_TEST_NIGHT=1, real-path tests only): the night flag, so 7898 draws its bars in 0x2A */
+        const bool was = DSW(0x3658) != 0;
+        DSW(0x3658) = 1;
+        if (tn == 2 && !was) pal_flight_load();   /* S3.6: F117_TEST_NIGHT=2 also loads the night palette (B) as a night mission does */
+    }
     if (enh.sandbox_hash[0]) hash_line();
     frame_passes = 0;
     img_a.valid = false;

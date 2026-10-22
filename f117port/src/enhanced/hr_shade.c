@@ -56,13 +56,14 @@ static Shade shade_now(void)
     return r;
 }
 
-void hr_shade_object(void) { cur = shade_now(); }
+void hr_shade_object(void) { cur = shade_now(); hr_night_object(); /* S3.6 */ }
 
 static int slot_of(u16 e) { int k = (int)(e - 0x49F0) / 0x16; return e >= 0x49F0 && (e - 0x49F0) % 0x16 == 0 && k < 50 ? k : -1; }
 
 void hr_shade_queue(u16 e)
 {
     int k = slot_of(e);
+    hr_night_queue(k);                                                /* S3.6 */
     if (k < 0) return;
     Shade s = shade_now();
     if (s.valid && DSB((u16)(e + 4)) != s.s) s.valid = 0;
@@ -72,6 +73,7 @@ void hr_shade_queue(u16 e)
 void hr_shade_dequeue(u16 rec)
 {
     int k = slot_of(rec);
+    hr_night_dequeue(k);                                              /* S3.6 */
     cur = k >= 0 ? queued[k] : (Shade){ 0, 0, 0 };
     if (cur.valid && DSB(0x4894) != cur.s) cur.valid = 0;
 }

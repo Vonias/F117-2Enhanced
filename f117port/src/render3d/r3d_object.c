@@ -394,13 +394,15 @@ void r3d_face_list(u16 si)
             u16 v = b & 0x7F;
             s16 val = (s8)ESB(si);
             si = (u16)(si + 1);
-            if ((u16)val == DSW((u16)(DSW(0x7D1E) + 2 * v))) continue;
+            if ((u16)val == DSW((u16)(DSW(0x7D1E) + 2 * v))) { ENH_HR(hr_night_cond(v)); /* ENH: S3.6, the lights */ continue; }
+            ENH_HR(hr_night_elem());                                      /* ENH: S3.6, the element is skipped (the lights condition goes with it) */
             u8 l = ESB(si);
             si = (u16)(si + 1);
             if (l == 0xFF) return;
             si = (u16)(si + (l & 0x1F) + 1);
             continue;
         }
+        ENH_HR(hr_night_elem());                                          /* ENH: S3.6 */
         if (b & 0x20) { si = (u16)(si + 1 + (b & 0x1F)); continue; }     /* 0DFE: points, computed and dropped */
         if (b & 0x40) {                                                  /* 0D5F: lines */
             u16 n = b & 0x1F;

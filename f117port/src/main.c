@@ -61,7 +61,7 @@ static int usage(const char *prog)
             "usage: %s [--game-dir DIR] [--scale N] [--aspect 4:3|1:1] [--fullscreen] [--headless]\n"
             "          [--trace] [--check] [--chain-test] [--tick-test [MS]]\n"
             "          [--keys NAME=CODE,...] [--keymap-test] [--frame-ticks N] [--version] [--classic]\n"
-            "          [--render-scale N] [--wide] [--no-wide] [--smooth-shading] [--compose-test]   (Enhanced)\n", prog);
+            "          [--render-scale N] [--wide] [--no-wide] [--smooth-shading] [--true-night] [--compose-test]   (Enhanced)\n", prog);
     return 2;
 }
 
