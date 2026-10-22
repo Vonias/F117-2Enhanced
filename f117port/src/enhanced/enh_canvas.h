@@ -40,7 +40,9 @@ bool enh_canvas_active(void);
 void enh_canvas_set_active(bool on);
 void enh_set_view(int view_mode);                       /* view_frame's mode word (DSW C07A) -> EnhView */
 EnhView enh_view_class(int view_mode, int style);       /* S3.4: the placement of view C07A with the HUD style [294B] (view 0 with style 1 = the second cockpit view: FIT) */
-bool enh_canvas_extended(void);                         /* S3.4: the current view is extended and the canvas is larger than the frame */
+bool enh_canvas_extended(void);
+void enh_canvas_frame_view(int view_mode, int style);   /* S3.4 fix 4: the placement of this frame's view, applied at the frame start (sandbox.c) */
+bool enh_present_hold(void);                            /* S3.4 fix 4: the presenter keeps its last picture (no resize, no compose) until the next flip */                         /* S3.4: the current view is extended and the canvas is larger than the frame */
 void enh_menu(bool on);                                 /* S3.4: a VGAME menu screen (quit requester, boss screen) is up: pillarboxed; off = the view before it */
 void enh_wide_capture(void);                            /* S3.4, sandbox.c: the wide display pass's 3D and vector layers (after its flip) become the pending wide picture */
 void enh_wide_clear_outside(void);                      /* S3.4, hr_pass.c: a wide main pass opens: the layers outside the frame are cleared */

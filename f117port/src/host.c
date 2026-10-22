@@ -203,6 +203,7 @@ static void canvas_sync(void)
     int ww = nominal_w, wh = nominal_h;
     if (window && !headless) SDL_GetWindowSizeInPixels(window, &ww, &wh);
     enh_canvas_update(ww, wh, aspect43);
+    if (enh_present_hold()) return;                       /* ENH: S3.4 fix 4, the last picture stays on screen until the new view's first frame */
     if (enh_cv.lw != frame_w || enh_cv.lh != frame_h) { host_resize_frame(enh_cv.lw, enh_cv.lh); repaint = true; }
 }
 
@@ -288,8 +289,23 @@ static void snapshot_static(void)
     if (dir && snap_n && SDL_GetTicksNS() - snap_last_ns >= interval) save_snapshot(dir, NULL);
 }
 
+/* ENH: S3.4 test aid (F117_PRESENT_LOG=FILE): per presented picture the time, the size and the share of pure black pixels (the black flash of a view switch) */
+static void present_log(void)
+{
+    static FILE *f;
+    static bool checked;
+    if (!checked) { const char *p = SDL_getenv("F117_PRESENT_LOG"); if (p && *p) f = fopen(p, "w"); checked = true; }
+    if (!f || !frame) return;
+    const size_t n = (size_t)frame_w * (size_t)frame_h;
+    size_t black = 0;
+    for (size_t i = 0; i < n; i++) black += (frame[i] & 0xFFFFFF) == 0;
+    fprintf(f, "%.3f %d %d %.4f\n", (double)(clk_ns() - clock_start_ns) / 1e9, frame_w, frame_h, n ? (double)black / (double)n : 0.0);
+    fflush(f);
+}
+
 static void present(void)
 {
+    present_log();                                        /* ENH: S3.4 test aid */
     snapshot();
     if (!texture) return;
     SDL_UpdateTexture(texture, NULL, frame, frame_w * 4);

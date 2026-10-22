@@ -331,6 +331,10 @@ The HUD symbology lines up with the world because the projection centre and scal
 * **No resize under an open pass (S3.4 fix 3).** The canvas geometry (and so the layer buffers) changes only outside a 3D pass and outside a display pass:
   `enh_canvas_update` defers otherwise (the real-time `[262A]` wait of `r3d_begin_scene` presents, and a view change such as key c resizes the canvas); a
   reallocation voids the hr pass context.
+* **View switches without an extra black frame (S3.4 fix 4).** The placement of the view a frame draws is applied at `enh_frame_begin` from `[C07A]` / `[294B]`
+  (`enh_canvas_frame_view`), so the canonical frame and its wide pass are drawn for it; until that frame is flipped the presenter keeps the last picture
+  (`enh_present_hold`: no compose, no host resize). The wide pass also runs on a frame that loads a cockpit picture: it sets `[2E48]` = `[C07A]` in its image (no file
+  read; only its 3D layer is used). What is left is the original's own `screen_off` blank (28-43 ms on most switches, as in `--classic`).
 * **`--wide` default: on** (S2.1's note "the default turns on with S3.4"; CLAUDE.md "enhanced defaults are on"); `--no-wide` and `--classic` turn it off; the launcher
   switch is S5.1's. With a 4:3 window (4:3 pixel aspect) the canvas is the frame and nothing changes.
 * **HUD anchor (3.4)** needed no code: the HUD, panel and MFDs are drawn in frame coordinates by the canonical frame and composed from it; the projection centre and

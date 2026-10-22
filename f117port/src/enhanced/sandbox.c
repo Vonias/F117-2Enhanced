@@ -179,6 +179,7 @@ void enh_frame_begin(void)
     if (enh.sandbox_hash[0]) hash_line();
     frame_passes = 0;
     img_a.valid = false;
+    if (!enh_sbx) enh_canvas_frame_view(DSW(0xC07A), DSB(0x294B));   /* S3.4 fix 4: this frame's placement first */
     wide_due = !enh_sbx && enh_wide_due();
     if (!enh_sandbox_on() && !wide_due) return;
     static bool at_exit_set;
@@ -231,6 +232,7 @@ void enh_display_pass(int v)
 
     enh_sbx = true;
     enh_wide_drawn = false;
+    if (enh_wide_pass) DSW(0x2E48) = DSW(0xC07A);             /* S3.4 fix 4: the cockpit picture counts as loaded (no file read in a pass); only the pass's 3D layer is used */
     test_view(v);
     view_frame();                                             /* the faithful frame's render, as frame_loop_body runs it */
     hud_overlay_frame();

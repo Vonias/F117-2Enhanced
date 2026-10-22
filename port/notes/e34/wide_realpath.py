@@ -203,11 +203,49 @@ def cview_run(exe, game, work):
     return 0 if ok else 1
 
 
-def run(exe, game, work, aspect, frames_png=''):
+def run(exe, game, work, aspect, frames_png='', extra='--wide', tag=None):
     os.environ['F117_WINDOW'] = ASPECTS[aspect]
     os.environ['SEL'] = str(SELECT)
-    p, pre = RP.run(exe, game, work, 'wide_' + aspect, N, KEYS, frames_png, frames=FRAMES, extra='--wide')
+    tag = tag or 'wide_' + aspect
+    os.environ['F117_PRESENT_LOG'] = os.path.join(work, tag + '_present.txt')       # S3.4 fix 4: every presented picture's black share
+    try:
+        p, pre = RP.run(exe, game, work, tag, N, KEYS, frames_png, frames=FRAMES, extra=extra)
+    finally:
+        os.environ.pop('F117_PRESENT_LOG', None)
     return p, pre
+
+
+def dark_ms(path):
+    """per view switch of the sweep: how long (ms) the presented picture is darker (share of pure black pixels) than both the picture shown before the
+    switch and the one shown 2 s after it, by more than 5 points (the black flash of a view change)"""
+    rows = [tuple(float(v) for v in l.split()) for l in open(path)]
+    def shown(t):
+        v = rows[0]
+        for r in rows:
+            if r[0] > t:
+                break
+            v = r
+        return v
+    out = {}
+    for t, k, label, *_ in VIEW_KEYS:
+        if t is None:
+            continue
+        thr = max(shown(t - 0.01)[3], shown(t + 2.0)[3]) + 0.05
+        seg = [r for r in rows if t <= r[0] < t + 2.0]
+        out[label] = sum(((seg[i + 1][0] if i + 1 < len(seg) else t + 2.0) - r[0]) * 1000 for i, r in enumerate(seg) if r[3] > thr)
+    return out
+
+
+def flash_check(exe, game, work):
+    """S3.4 fix 4: the black flash per view switch, enhanced (16:9, wide) against --classic (the original blanks the screen for one or two presents on most
+    switches: view_frame's screen_off / screen_on): the enhanced build may not be dark longer than classic (2 ms slack)"""
+    e = dark_ms(os.path.join(work, 'wide_16x9_present.txt'))
+    run(exe, game, work, '16x9', extra='--classic', tag='classic_16x9')
+    c = dark_ms(os.path.join(work, 'classic_16x9_present.txt'))
+    worse = [k for k in e if e[k] > c.get(k, 0) + 2]
+    print('wide-realpath view-switch black flash (ms dark, enhanced / classic): %s%s' % (', '.join('%s %.0f/%.0f' % (k, e[k], c.get(k, 0)) for k in e),
+                                                                                 '' if not worse else '  BAD: longer than classic at ' + ', '.join(worse)))
+    return 1 if worse else 0
 
 
 def png_frames():
@@ -312,6 +350,8 @@ def main():
         for f in os.listdir(os.path.join(work, 'wide_' + a)):
             if f.endswith('.raw'):
                 os.remove(os.path.join(work, 'wide_' + a, f))
+    if '16x9' in aspects:
+        bad += flash_check(exe, game, work)
     bad += night_run(exe, game, work)
     bad += cview_run(exe, game, work)
     if png:

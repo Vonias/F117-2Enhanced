@@ -35,6 +35,8 @@ int enh_vec_hold;     /* S3.1: > 0 = the 1x line()/put_pixel writes are an hr em
 static bool active;
 static EnhView view = ENH_VIEW_MENU;
 static bool menu_on;                     /* S3.4: a VGAME menu screen is up (enh_menu) */
+static int last_win_w, last_win_h;          /* S3.4 fix 4: the host's window, for a placement change at the start of a frame */
+static bool last_a43, present_hold;
 static EnhView menu_saved;
 
 static Shadow sh_buf[2][PAGE_PIXELS];
@@ -96,6 +98,7 @@ void enh_canvas_set_active(bool on)
     enh_shadow_on = on && enh_canvas_on();
     view = ENH_VIEW_MENU;                        /* a mode set starts a new program: the menu placement */
     menu_on = false;
+    present_hold = false;
     enh_route = ENH_ROUTE_ART;
 }
 
@@ -108,6 +111,21 @@ EnhView enh_view_class(int m, int style)
     if (m >= 0x41 && m <= 0x43) return ENH_VIEW_FIT;
     return ENH_VIEW_FULL;
 }
+
+/* S3.4 fix 4 (the black flash of a view switch): sandbox.c enh_frame_begin, before A_k: the placement of the view this frame will draw (view C07A, [294B]) is applied
+ * now, so the frame and its wide display pass are drawn for it; until that frame is flipped the presenter keeps the last picture (enh_compose_vga, host canvas_sync). */
+void enh_canvas_frame_view(int m, int style)
+{
+    if (!enh_canvas_active() || !last_win_w) return;
+    const EnhView v = enh_view_class(m, m == 0 ? style : 0);
+    if (v == view || menu_on) return;
+    const EnhCanvas old = enh_cv;
+    view = v;
+    enh_canvas_update(last_win_w, last_win_h, last_a43);
+    if (memcmp(&old, &enh_cv, sizeof old)) present_hold = true;
+}
+
+bool enh_present_hold(void) { return present_hold && enh_canvas_active(); }
 
 void enh_set_view(int m)
 {
@@ -159,6 +177,7 @@ void enh_canvas_test_window(int w, int h) { test_win_w = w; test_win_h = h; }
 bool enh_canvas_update(int win_w, int win_h, bool aspect43)
 {
     EnhCanvas c;
+    last_win_w = win_w; last_win_h = win_h; last_a43 = aspect43;
     if (test_win_w > 0) { win_w = test_win_w; win_h = test_win_h; aspect43 = false; }
     if (enh_hr.on || enh_sbx) return false;           /* S3.4 fix: never inside a 3D pass or a display pass (host_pump runs in the [262A] wait of r3d_begin_scene: a
                                                        * view change, e.g. key c, resized the layers under the open pass -> writes into freed memory, the crash) */
@@ -387,7 +406,7 @@ void enh_wide_clear_outside(void)
 void enh_flip(unsigned bytes)
 {
     size_t n = bytes < PAGE_PIXELS ? bytes : PAGE_PIXELS;
-    if (!enh_sbx) held_promote();                                    /* S3.4: the wide picture of this frame goes on screen with it */
+    if (!enh_sbx) { held_promote(); present_hold = false; }          /* S3.4: the wide picture of this frame goes on screen with it (fix 4: the held picture is released) */
     memcpy(sh_shown, sh_work, n * sizeof(Shadow));
     if (layer_px) {
         memcpy(l3d_shown, l3d_work, layer_px * sizeof(u16));
@@ -492,6 +511,7 @@ bool enh_compose_vga(u32 *xrgb)
     static size_t last_px;
     u32 pal[256];
     const size_t px = (size_t)enh_cv.lw * (size_t)enh_cv.lh;
+    if (present_hold) return false;                                   /* S3.4 fix 4: the last picture stays until the new placement's first frame is flipped */
     bool screen = vga_shown_frame(idx, sidx, pal);
     ComposeSrc cs;
     compose_src_live(&cs);                                            /* ENH: S3.4, with the wide picture */

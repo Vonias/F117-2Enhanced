@@ -163,7 +163,6 @@ bool enh_wide_due(void)
     if (!enh.wide || !enh_canvas_on() || !enh_canvas_active()) return false;
     const u16 mode = DSW(0xC07A);
     if (enh_view_class((int)mode, DSB(0x294B)) == ENH_VIEW_FIT || enh_view_class((int)mode, DSB(0x294B)) == ENH_VIEW_MENU) return false;
-    if (DSW(0x2E48) != mode) return false;                 /* a view change: view_frame loads the cockpit picture (a file read, refused in a pass); one frame without */
     const EnhView v = enh_view_get();
     if (v != ENH_VIEW_FRONT && v != ENH_VIEW_FULL && v != ENH_VIEW_SIDE) return false;   /* the canvas still has another view's placement (it follows at the next present) */
     return enh_cv.vw > 320 * enh_cv.n || enh_cv.vh > 200 * enh_cv.n;
