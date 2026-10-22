@@ -22,11 +22,10 @@ remove it when it is done.
 
 | Task | What to do | For | Time |
 |---|---|---|---|
-| U1 (S3.5) | Smooth distance shading: run `& "C:\Coding\F117-2Enhanced\f117port\build\f117-enhanced.exe" --game-dir "C:\Coding\F117-2\Game" --render-scale 4 --smooth-shading`, fly a mission, then the same without `--smooth-shading`. Look at: the sky above the horizon and the ground below it (a smooth gradient instead of stripes), roads / fields / water on the ground (they follow the same gradient), buildings and aircraft as they approach or recede (they fade gradually instead of jumping a shade), the outside views (F2.., chase) and the wide edges of a 16:9 window; a palette change (time of day, explosion flash) must still recolour the sky; the HUD, MFDs, cockpit and sprites must look the same as without the option. PNGs to compare first: `work/e35/contact_smooth.png`, `work/e35/contact_scenes.png`. Tell me if anything looks wrong (banding left, wrong colours, seams). | S3.5 | 10 min |
 
 ## Status
 
-- **Done:** S0.1 (repo from the faithful port), S1.1 (`DESIGN.md`, the render and timing design), S2.1 (canvas, compositor, shadow plane; U1 OK 2026-10-19), S2.2 (render3d at N×; U1 OK 2026-10-20), S2.3 (tests, reference rasteriser, dumps; U1 OK 2026-10-20), S2.4 (sandboxed display pass, hash ctest), S3.1 (objects and views at N×; U1 OK 2026-10-20), S3.2 (TV camera and map MFD at N×; U1 OK 2026-10-20), S3.3 (HUD and MFD vector graphics at N×; U1 OK 2026-10-21), S3.4 (wider view; U1 OK 2026-10-22), S3.5 (smooth distance shading, option; U1 pending).
+- **Done:** S0.1 (repo from the faithful port), S1.1 (`DESIGN.md`, the render and timing design), S2.1 (canvas, compositor, shadow plane; U1 OK 2026-10-19), S2.2 (render3d at N×; U1 OK 2026-10-20), S2.3 (tests, reference rasteriser, dumps; U1 OK 2026-10-20), S2.4 (sandboxed display pass, hash ctest), S3.1 (objects and views at N×; U1 OK 2026-10-20), S3.2 (TV camera and map MFD at N×; U1 OK 2026-10-20), S3.3 (HUD and MFD vector graphics at N×; U1 OK 2026-10-21), S3.4 (wider view; U1 OK 2026-10-22), S3.5 (smooth distance shading, option; U1 OK 2026-10-22).
 - **Next:** S3.6 (Opus): true night (option, default off; builds on the band position of S3.5). Your tasks: **User to-do** above.
 - Escalation rule: a subtask that fails twice on Sonnet → new Opus session with a 5-line note
   (symptom, file, what was tried). Never carry an old transcript over.
