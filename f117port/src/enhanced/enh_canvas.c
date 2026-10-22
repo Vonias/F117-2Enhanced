@@ -453,7 +453,7 @@ static inline u32 l3_rgb(const u32 *pal, u16 l, bool blend)
 /* S3.6 (DESIGN 2.12): a 3D layer pixel of a true-night pass, its colour times nd / 256 (0 = as the original) */
 static inline u32 l3_night(u32 c, u8 nd)
 {
-    if (!nd) return c;
+    if (!nd || nd == HR_NIGHT_LIT) return c;
     return ((((c >> 16) & 255) * nd + 128) >> 8) << 16 | ((((c >> 8) & 255) * nd + 128) >> 8) << 8 | (((c & 255) * nd + 128) >> 8);
 }
 enum { CLS_BLACK, CLS_ART, CLS_WORLD, CLS_VEC, CLS_WORLD1 };   /* nothing / a page pixel (art, text, panel) / a 3D layer pixel / a vector layer pixel / a 3D record shown as its 1x pixel */
@@ -506,7 +506,7 @@ static void compose_canvas(u32 *out, const u8 *idx, const u16 *sidx, const u32 *
                     for (int kx = 0; kx < n; kx++) {
                         u16 l = L3[at + kx];
                         o[kx] = (l & 0x100) ? l3_rgb(pal, l, cs->blend) : pal[v];
-                        if (N3 && (l & 0x100)) o[kx] = l3_night(o[kx], N3[at + kx]);
+                        if (N3) o[kx] = l3_night(o[kx], N3[at + kx]);     /* also a 1x pixel of the scene (the pass end gave it a factor) */
                         if (co) co[x * n + kx] = (l & 0x100) ? CLS_WORLD : CLS_WORLD1;
                     }
                     continue;

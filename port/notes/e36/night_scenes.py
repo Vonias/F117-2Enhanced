@@ -26,7 +26,10 @@ from hrd import Hrd
 
 K_NEAR, K_FAR, SKY_H, SKY_T = 128, 15, 77, 26           # x 256, rounded (hr_night.c)
 MONO_TOL = 1
-PNG_SCENES = ('runway0', 'runway_full', 'low_d3_0', 'low_d3_1', 'high0', 'close3', 'ext0', 'frames')
+STEP_TOL = 3              # a factor step: a change 3/256 above both neighbouring changes
+SPIKE_TOL, SPIKE_DEV = 3, 4   # a seam: both neighbours within 3, the pixel more than 4 off their mean
+BAND_SHARE = 0.05         # band colour steps left: at most 5 % of the option-off band changes (S3.5: the bands thinner than 2 px)
+PNG_SCENES = ('runway0', 'runway_full', 'low_d3_0', 'low_d3_1', 'high0', 'high2', 'close3', 'ext0', 'frames')
 EXCLUDED = ('tv', 'map', 'hud_map')                     # scene families with no main 3D window: must stay identical
 
 
@@ -61,31 +64,68 @@ def lit(idx):
 
 
 def mono(lay, nd):
-    """(runs, violations) of the band runs down the columns"""
+    """(runs, violations, pairs, factor steps) of the band runs down the columns: a run of one band ramp never gets darker downwards; a factor step = a pair
+    whose change exceeds both neighbouring pairs' by more than STEP_TOL (the factor jumping at a band edge)"""
     idx = (lay & 0xFF).astype(np.int32)
-    ok = ((lay & 0x300) == 0x100) & (nd > 0)
+    ok = ((lay & 0x300) == 0x100) & (nd > 0) & (nd < 255)
     ramp = np.where(ok & (idx >= 0x80) & (idx <= 0x8F), 1, np.where(ok & (idx >= 0x70) & (idx <= 0x7F), 2, 0))
     same = (ramp[:-1] != 0) & (ramp[:-1] == ramp[1:])
     dn = nd[1:].astype(np.int32) - nd[:-1].astype(np.int32)
     bad_pair = same & (dn < -MONO_TOL)
     runs = int((same[1:] & ~same[:-1]).sum() + same[0].sum())
-    return runs, int(bad_pair.sum())
+    tri = same[1:-1] & same[:-2] & same[2:]
+    steps = tri & (np.abs(dn[1:-1]) > np.maximum(np.abs(dn[:-2]), np.abs(dn[2:])) + STEP_TOL)
+    return runs, int(bad_pair.sum()), int(same.sum()), int(steps.sum())
+
+
+def spikes(lay, nd):
+    """(ground, object) pixels whose factor sticks out of both neighbours (along x or y) while the neighbours agree: a seam line between faces.
+    ground = the pixel and both neighbours in the ground ramps 60h..7Fh; object = in the shaded ramps A0h..FFh"""
+    idx = (lay & 0xFF).astype(np.int32)
+    n = nd.astype(np.int32)
+    ok = (nd > 0) & (nd < 255)
+    out = []
+    for lo, hi in ((0x60, 0x7F), (0xA0, 0xFF)):
+        g = ok & (idx >= lo) & (idx <= hi)
+        c = 0
+        for ax in (0, 1):
+            a, b = np.roll(n, 1, ax), np.roll(n, -1, ax)
+            sp = g & np.roll(g, 1, ax) & np.roll(g, -1, ax) & (np.abs(a - b) <= SPIKE_TOL) & (np.abs(2 * n - a - b) > 2 * SPIKE_DEV)
+            sp[0, :] = sp[-1, :] = False
+            sp[:, 0] = sp[:, -1] = False
+            c += int(sp.sum())
+        out.append(c)
+    return out
+
+
+def band_steps(lay, shown):
+    """vertical pairs of the same band ramp: (pairs where the band index changes, pairs whose continuous colour position changes by >= 3/4 band)"""
+    idx = (lay & 0xFF).astype(np.int32)
+    ramp = np.where((idx >= 0x80) & (idx <= 0x8F), 1, np.where((idx >= 0x70) & (idx <= 0x7F), 2, 0))
+    ramp[~shown] = 0
+    code = (lay >> 10).astype(np.int32)
+    pos = (idx & 15) * 64 + np.where(code != 0, code - 32, 0)
+    same = (ramp[:-1] != 0) & (ramp[:-1] == ramp[1:])
+    return int((same & ((idx[1:] & 15) != (idx[:-1] & 15))).sum()), int((same & (np.abs(pos[1:] - pos[:-1]) >= 48)).sum())
 
 
 def new_tot():
-    return dict(scenes=0, missing=0, kept_bad=0, scaled_px=0, art_px=0, scaled_bad=0, lit_bad=0, lit_px=0, curve_bad=0, runs=0, mono_bad=0,
-                excl_scenes=0, excl_bad=0, sum_on=0.0, sum_off=0.0, win_on=0.0, win_off=0.0, sky=0, ground=0, obj=0)
+    return dict(scenes=0, missing=0, kept_bad=0, lit_bad=0, lit_px=0, lit_sky=0, scaled_px=0, art_px=0, scaled_bad=0, unset=0, curve_bad=0, runs=0, mono_bad=0,
+                pairs=0, fsteps=0, bsteps=0, bsteps_on=0, sp_ground=0, sp_obj=0, excl_scenes=0, excl_bad=0, sum_on=0.0, sum_off=0.0, win_on=0.0, win_off=0.0,
+                sky=0, ground=0, obj=0)
 
 
-def compare(doff, don, tot, worst):
+def compare(d0, ds, don, tot, worst):
+    """d0: the run that pixels without a night pass must equal (option off, same smooth setting); ds: the option-off run with --smooth-shading (a night pass
+    blends its colours, so its pixels are that run's colours times the factor); don: the run with the option"""
     for f in sorted(f for f in os.listdir(don) if f.endswith('.hrd')):
         sid = f[:-4]
-        po, pn, pd = os.path.join(doff, sid + '.rgb'), os.path.join(don, sid + '.rgb'), os.path.join(don, sid + '.nd')
-        if not (os.path.isfile(po) and os.path.isfile(pn) and os.path.isfile(pd)):
+        p0, ps, pn, pd = (os.path.join(d0, sid + '.rgb'), os.path.join(ds, sid + '.rgb'), os.path.join(don, sid + '.rgb'), os.path.join(don, sid + '.nd'))
+        if not all(os.path.isfile(p) for p in (p0, ps, pn, pd)):
             tot['missing'] += 1
             continue
         tot['scenes'] += 1
-        ra, rb, nd = read_img(po, '<u4'), read_img(pn, '<u4'), read_img(pd, 'u1')
+        r0, rs, rb, nd = read_img(p0, '<u4'), read_img(ps, '<u4'), read_img(pn, '<u4'), read_img(pd, 'u1')
         h = Hrd(os.path.join(don, f))
         lay = h.full_layer()
         if lay.shape != nd.shape:
@@ -93,58 +133,72 @@ def compare(doff, don, tot, worst):
             continue
         if sid.startswith(EXCLUDED):
             tot['excl_scenes'] += 1
-            if (ra != rb).any() or nd.any():
+            if (r0 != rb).any() or nd.any():
                 tot['excl_bad'] += 1
                 worst.append('%s: an excluded scene changed' % sid)
         z = nd == 0
-        kb = int((z & (ra != rb)).sum())
-        tot['kept_bad'] += kb
-        m = ~z
-        exp = scaled(ra, nd)
-        sc = m & (rb == exp)
-        art = m & ~sc & (rb == ra)
+        kb = int((z & (r0 != rb)).sum())
+        L = nd == 255
+        lb = int((L & (rs != rb)).sum())
+        m = ~z & ~L
+        sc = m & (rb == scaled(rs, nd))
+        art = m & ~sc & (rb == rs)
         sb = int((m & ~sc & ~art).sum())
-        tot['scaled_px'] += int(sc.sum()); tot['art_px'] += int(art.sum()); tot['scaled_bad'] += sb
         idx = (lay & 0xFF).astype(np.int32)
         wr = (lay & 0x100) != 0
-        lb = int((wr & lit(idx) & m).sum())
-        tot['lit_bad'] += lb
-        tot['lit_px'] += int((wr & lit(idx) & z).sum())
-        sky = m & (idx >= 0x80) & (idx <= 0x8F)
-        gnd = m & ~sky
-        cb = int((sky & ((nd < SKY_T - 1) | (nd > SKY_H + 1))).sum() + (gnd & ((nd < K_FAR - 1) | (nd > K_NEAR + 1))).sum())
+        unset = 0
+        if (~z).any():                                               # the night window: the box of the pixels with a factor
+            ys, xs = np.nonzero(~z)
+            box = np.zeros(nd.shape, bool)
+            box[ys.min():ys.max() + 1, xs.min():xs.max() + 1] = True
+            unset = int((box & wr & z).sum())
+        tot['kept_bad'] += kb; tot['lit_bad'] += lb; tot['lit_px'] += int(L.sum()); tot['lit_sky'] += int((L & (idx >= 0x80) & (idx <= 0x8F)).sum())
+        tot['scaled_px'] += int(sc.sum()); tot['art_px'] += int(art.sum()); tot['scaled_bad'] += sb; tot['unset'] += unset
+        cb = int((m & ((nd < K_FAR - 1) | (nd > K_NEAR + 1))).sum())
         tot['curve_bad'] += cb
-        tot['sky'] += int(sky.sum()); tot['ground'] += int((m & (idx >= 0x60) & (idx <= 0x7F)).sum()); tot['obj'] += int((m & (idx >= 0xA0)).sum())
-        r, b = mono(lay, nd)
-        tot['runs'] += r; tot['mono_bad'] += b
-        tot['sum_on'] += float(lum(rb[sc]).sum()); tot['sum_off'] += float(lum(ra[sc]).sum())
+        tot['sky'] += int((m & (idx >= 0x80) & (idx <= 0x8F)).sum()); tot['ground'] += int((m & (idx >= 0x60) & (idx <= 0x7F)).sum())
+        tot['obj'] += int((m & (idx >= 0xA0)).sum())
+        r, b, pr, fs = mono(lay, nd)
+        tot['runs'] += r; tot['mono_bad'] += b; tot['pairs'] += pr; tot['fsteps'] += fs
+        sg, so = spikes(lay, nd)
+        tot['sp_ground'] += sg; tot['sp_obj'] += so
+        bo, bn = band_steps(lay, wr & m)
+        tot['bsteps'] += bo; tot['bsteps_on'] += bn
+        tot['sum_on'] += float(lum(rb[sc]).sum()); tot['sum_off'] += float(lum(r0[sc]).sum())
         if h.has_win:
             w = np.zeros(nd.shape, bool)
             w[h.y0:h.y1 + 1, h.x0:h.x1 + 1] = True
-            tot['win_on'] += float(lum(rb[w]).sum()); tot['win_off'] += float(lum(ra[w]).sum())
-        if (kb or sb or lb or cb) and len(worst) < 8:
-            worst.append('%s: kept %d, scaled %d, lights %d, curve %d' % (sid, kb, sb, lb, cb))
+            tot['win_on'] += float(lum(rb[w]).sum()); tot['win_off'] += float(lum(r0[w]).sum())
+        if (kb or sb or lb or cb or unset or sg) and len(worst) < 8:
+            worst.append('%s: kept %d, lights %d, scaled %d, curve %d, unset %d, ground seams %d' % (sid, kb, lb, sb, cb, unset, sg))
 
 
 def verdict(name, tot, worst):
     ratio = tot['sum_on'] / max(1.0, tot['sum_off'])
     wratio = tot['win_on'] / max(1.0, tot['win_off'])
-    print('r3d-night %s: %d scenes; pixels without a factor differing %d; %d darkened pixels (%d sky, %d ground faces 60h-7Fh, %d ramps A0h-FFh), %d under art, '
-          'not the scaled colour %d; light-colour pixels kept %d, with a factor %d; factors off the curve %d; band runs %d, darker downwards %d; brightness of the '
-          'darkened pixels %.1f %%, of the 3D windows %.1f %% of option off; excluded scenes (TV, map) %d, changed %d' % (
-              name, tot['scenes'], tot['kept_bad'], tot['scaled_px'], tot['sky'], tot['ground'], tot['obj'], tot['art_px'], tot['scaled_bad'], tot['lit_px'],
-              tot['lit_bad'], tot['curve_bad'], tot['runs'], tot['mono_bad'], 100 * ratio, 100 * wratio, tot['excl_scenes'], tot['excl_bad']))
+    print('r3d-night %s: %d scenes; pixels without a night pass differing %d; %d darkened pixels (%d sky, %d ground faces 60h-7Fh, %d ramps A0h-FFh), %d under art, '
+          'not the scaled colour %d; window pixels without a factor %d; light pixels (by source) %d (%d in sky colours), not as without the factor %d; factors off '
+          'the curve %d; band runs %d, darker downwards %d, factor steps %d in %d pairs; band colour steps >= 3/4 band %d (option off: %d band changes); seams '
+          '(factor spikes) on the ground %d, on objects %d; brightness of the darkened pixels %.1f %%, of the 3D windows %.1f %% of option off; excluded scenes '
+          '(TV, map) %d, changed %d' % (
+              name, tot['scenes'], tot['kept_bad'], tot['scaled_px'], tot['sky'], tot['ground'], tot['obj'], tot['art_px'], tot['scaled_bad'], tot['unset'],
+              tot['lit_px'], tot['lit_sky'], tot['lit_bad'], tot['curve_bad'], tot['runs'], tot['mono_bad'], tot['fsteps'], tot['pairs'], tot['bsteps_on'],
+              tot['bsteps'], tot['sp_ground'], tot['sp_obj'], 100 * ratio, 100 * wratio, tot['excl_scenes'], tot['excl_bad']))
     for w in worst[:8]:
         print('  ' + w)
     bad = 0
     if tot['scenes'] < 50 or tot['missing']:
         print('  too few scenes / missing dumps'); bad += 1
-    if tot['kept_bad'] or tot['scaled_bad'] or tot['lit_bad'] or tot['curve_bad'] or tot['excl_bad']:
+    if tot['kept_bad'] or tot['scaled_bad'] or tot['lit_bad'] or tot['curve_bad'] or tot['excl_bad'] or tot['unset'] or tot['lit_sky']:
         bad += 1
-    if tot['scaled_px'] < 100000 or tot['sky'] < 10000 or tot['obj'] < 1000 or tot['runs'] < 1000 or tot['excl_scenes'] < 5:
+    if tot['scaled_px'] < 100000 or tot['sky'] < 10000 or tot['obj'] < 1000 or tot['runs'] < 1000 or tot['excl_scenes'] < 5 or tot['bsteps'] < 1000:
         print('  too little to judge'); bad += 1
-    if tot['mono_bad'] > 0.001 * max(1, tot['runs']):
-        print('  not monotonic'); bad += 1
+    if tot['mono_bad'] > 0.001 * max(1, tot['runs']) or tot['fsteps'] > 0.0001 * max(1, tot['pairs']):
+        print('  the factor is not continuous down the bands'); bad += 1
+    if tot['bsteps_on'] > BAND_SHARE * tot['bsteps']:
+        print('  the band colours still step'); bad += 1
+    if tot['sp_ground'] > 0:
+        print('  seams on the ground'); bad += 1
     if ratio > 0.5 or wratio > 0.6:
         print('  not darker'); bad += 1
     return bad
@@ -242,7 +296,8 @@ def main():
     cw, ch = 480 * n, 240 * n
     runs = [('day', 'off', ''), ('day', 'on', '--true-night'),
             ('night', 'off', ''), ('night', 'on', '--true-night'), ('night', 'soff', '--smooth-shading'), ('night', 'son', '--smooth-shading --true-night'),
-            ('night', 'woff', '--wide-test %dx%d' % (cw, ch)), ('night', 'won', '--wide-test %dx%d --true-night' % (cw, ch))]
+            ('night', 'woff', '--wide-test %dx%d' % (cw, ch)), ('night', 'wsoff', '--wide-test %dx%d --smooth-shading' % (cw, ch)),
+            ('night', 'won', '--wide-test %dx%d --true-night' % (cw, ch))]
     dirs = {}
     for kind, tag, extra in runs:
         d = os.path.join(bases[kind], tag)
@@ -256,10 +311,10 @@ def main():
             return 1
         dirs[kind + tag] = d
     bad = day_check(dirs['dayoff'], dirs['dayon'])
-    for name, a, b in (('night N=%d' % n, 'nightoff', 'nighton'), ('night N=%d smooth shading' % n, 'nightsoff', 'nightson'),
-                       ('night wide %dx%d N=%d' % (cw, ch, n), 'nightwoff', 'nightwon')):
+    for name, a, sm, b in (('night N=%d' % n, 'nightoff', 'nightsoff', 'nighton'), ('night N=%d smooth shading' % n, 'nightsoff', 'nightsoff', 'nightson'),
+                           ('night wide %dx%d N=%d' % (cw, ch, n), 'nightwoff', 'nightwsoff', 'nightwon')):
         tot, worst = new_tot(), []
-        compare(dirs[a], dirs[b], tot, worst)
+        compare(dirs[a], dirs[sm], dirs[b], tot, worst)
         bad += verdict(name, tot, worst)
     if png:
         lab = {'nightoff': 'night', 'nighton': 'true night', 'nightsoff': 'night, smooth', 'nightson': 'true night, smooth', 'nightwoff': 'night wide',

@@ -28,7 +28,7 @@ void hr_shade_regions(void (*add)(void *p, size_t n))
 
 void hr_shade_pass_begin(void)
 {
-    hr_smooth = enh_smooth_on();
+    hr_smooth = enh_smooth_on() || enh_hr.night;                      /* S3.6: true night implies the blend of the colours it darkens */
     cur.valid = 0;
     memset(queued, 0, sizeof queued);
     col.valid = 0;
@@ -79,6 +79,7 @@ void hr_shade_dequeue(u16 rec)
 }
 
 void hr_shade_colour(u16 colour) { col.valid = 1; col.lo = (u8)colour; }
+u8 hr_shade_lo(u16 colour) { return col.valid && (u8)(colour >> 8) == 0xFF && (u8)colour >= 0xA0 ? col.lo : (u8)colour; }   /* S3.6: the unshaded index */
 
 u16 hr_shade_code(u16 colour)
 {

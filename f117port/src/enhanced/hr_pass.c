@@ -139,8 +139,8 @@ void enh_r3d_viewport(u16 vp)
     continue_next = false;
     enh_hr.have = false;
     hr_obj_pass_begin();
+    hr_night_pass_begin(main_win);                                        /* S3.6 (before S3.5: a night pass turns the blend codes on) */
     hr_shade_pass_begin();                                                /* S3.5 */
-    hr_night_pass_begin(main_win);                                        /* S3.6 */
     if (!enh_page_tracked(seg)) return;
     if (!keep) enh_pass_clear(x0, y0, x1, y1);
     u16 *layer = enh_layer3d();
@@ -204,6 +204,7 @@ void enh_tint_note(int x, int y, int w, int h)
 
 void enh_r3d_end(void)
 {
+    if (enh_hr.on) hr_night_pass_end();                                   /* S3.6 */
     if (enh_hr.on && enh.hr_check) pass_stats();
     if (enh_wide_on) enh_wide_end();                                      /* S3.4 */
     enh_hr.on = false;

@@ -299,24 +299,32 @@ True night (as built; `src/enhanced/hr_night.c`):
 * **Gate.** The option is on, not `--classic`, the pass is the main 3D window (x0 = 0, y0 = 0, x1 = 319: cockpit, full screen, outside views, the S3.4 wide
   pass) and `[3658]` != 0 and not the map (`[7D5E]`), when the pass opens. The TV / FLIR camera, the map MFD, HUD, MFDs, cockpit art, lamps and menus never get it
   (other passes, the vector layer or page pixels). Day missions and Alt-N to day: nothing changes.
-* **The night plane.** A third canvas plane `u8[Lw*Lh]` beside the 3D layer (work / shown / wide picture / window store / display-pass snapshot): 0 = as the
-  original, else the brightness factor `k = nd / 256` of that layer pixel. It is written only by the hr back end in a night pass and cleared with the layer;
-  every other writer (sprites, smoke and explosion bitmaps, the far dots, tracers, target boxes, 1x stamps, the FLIR tint) leaves or writes 0. The layer word
-  (index, written / stamped bits, the S3.5 blend code) is untouched, so with the option off, `--classic` or by day the picture is the same bytes as before.
-* **Backdrop** (after 1442 at every detail level, every written pixel of the pass window, not in the S3.4 hole): from the band geometry of 2.11, `t(q)` and the
-  horizon `H` (1x t-units, focal `f = 256 << [433A]`, halved with `[294B]`). Above the horizon (or a sky colour 80h..8Fh): the elevation `e = (t - H) / f`, `k_sky =
-  SKY_TOP + (SKY_HORIZON - SKY_TOP) exp(-e / SKY_E)`. Below (or a ground colour): the ground distance `D = 1 / (G / (f alt) + 1 / 131072)`, `G = H - t` (the
-  band formula solved for a continuous ring, so D = (16 - i) 8192 at the band edges and 131072 on the horizon line; works at low altitude where the bands collapse),
-  `k = curve(D)`. AND / OR ground faces (roads, fields, water: FEh / FDh) keep the factor of the backdrop pixel they recolour.
-* **Objects** (terrain tiles, scenery, sites, aircraft: the shade hooks of 2.11 E7AC / DDFE / DF08, also without `--smooth-shading`): the depth `D = C / 65536 -
-  512 class` (the depth the original shade uses), `k = curve(D)` for every fill / line / dither / stipple of the object, except (a) a face or line under a lights
-  condition (var 10 / 11; hooks in `r3d_face_list`) and (b) a pixel whose colour is a light colour: 00h..0Fh, 50h..5Fh, 90h..97h (factor 0 = unchanged).
+* **The night plane.** A third canvas plane `u8[Lw*Lh]` beside the 3D layer (work / shown / wide picture / window store / display-pass snapshot): 0 = no night
+  pass (as the original), 1..254 = the brightness factor `k = nd / 256`, 255 = a light (as the original). It is written only by the hr back end in a night pass
+  and cleared with the layer. The layer word is untouched, so with the option off, `--classic` or by day the picture is the same bytes as before.
+* **Continuous colours (fix 1).** A night pass turns on the S3.5 blend codes of the bands and the shaded ramps whatever `--smooth-shading` says: darkening the
+  stepped band colours kept the band steps visible (U1). The factor itself is a continuous function of the pixel's distance and never steps per band.
+* **Backdrop** (after 1442 at every detail level, every written pixel of the pass window, not in the S3.4 hole): the pass geometry from the band geometry of 2.11,
+  `t(q)` and the horizon `H` (1x t-units, focal `f = 256 << [433A]`, halved with `[294B]`). Above the horizon line (or a sky colour 80h..8Fh): the elevation
+  `e = (t - H) / f`, `k_sky = SKY_TOP + (SKY_HORIZON - SKY_TOP) exp(-e / SKY_E)`. Below (or a ground colour 70h..7Fh): the ground distance
+  `D = 1 / (G / (f alt) + 1 / 131072)`, `G = H - t` (the band formula solved for a continuous ring, so D = (16 - i) 8192 at the band edges and 131072 on the horizon
+  line; works at low altitude where the bands collapse), `k = curve(D)`. AND / OR ground faces (roads, fields, water: FEh / FDh) keep the factor of the pixel
+  they recolour.
+* **Objects** (the shade hooks of 2.11 E7AC / DDFE / DF08): per pixel `D = min(D_ground(q), C / 65536 + r_class)` (r_class = the cull x radius DS:48D6, so the
+  object's far side; above the horizon line the far side). Fix 1: a single depth per object made each terrain tile, road and sea face one flat factor that
+  differed from its neighbours and from the backdrop (the seams U1 saw on the sea); now a face lying on the ground gets exactly the ground's per-pixel factor and
+  adjacent faces join, while a standing object is never darker than its far side.
+* **Lights, by source** (fix 1; before, a palette rule exempted colours 00h..0Fh, 50h..5Fh, 90h..97h wherever they were used): the faces and lines under a
+  lights condition (var 10 / 11; hooks in `r3d_face_list`), the model lines (40h elements) in the light colours 90h..97h, and everything the overlay pass after
+  the scene draws (A17E: explosions, tracers, flares, target boxes) get 255. Everything else the scene pass leaves without a factor (smoke and the other sprites,
+  the far dots, 1x stamps, 3D records shown as their 1x pixel) gets the factor of its place (sky / ground) at the end of the pass (`hr_night_pass_end`); before
+  fix 1 those stayed at their original brightness (the bright dots and dotted lines U1 saw in the black sky).
 * **curve(D)** = `K_FAR + (K_NEAR - K_FAR) exp(-D / D_LIT)`, monotonic: near ground and objects keep about half their night brightness, beyond a few D_LIT they
   are near black, sooner than the original's ramp. **Tuned constants** (hr_night.c): `K_NEAR = 0.50`, `K_FAR = 0.06`, `D_LIT = 3000` depth units (k = 0.37 at
   1000, 0.22 at 3000, 0.12 at 6000, 0.075 at 10000; the object range at detail 3 is 13332), `SKY_HORIZON = 0.30`, `SKY_TOP = 0.10`, `SKY_E = 0.15` (k = 0.17 at
   e = 0.25, i.e. 14 deg up). Night B: the near ground (0,80,0) RGB -> (0,40,0) at the aircraft, (0,18,0) at 3000; the horizon sky (124,64,120) -> (37,19,36),
   the top (32,44,68) -> (3,4,7).
-* **Compositor.** A 3D layer pixel with `nd != 0` shows `(rgb * nd + 128) >> 8` of its colour from the live DAC (after the S3.5 mix), so palette fades, the
+* **Compositor.** A 3D pixel (layer or 1x) with `nd` 1..254 shows `(rgb * nd + 128) >> 8` of its colour from the live DAC (after the S3.5 mix), so palette fades, the
   dusk drift, the explosion flashes and Alt-N still apply; the compositor's index-only paths (the hr check `.cmp`) ignore it.
 * Rendering only: the hooks store hr state; the sim, the 1x page and the DAC are untouched. Option `--true-night` / `--no-true-night` (and F117_ENH_ARGS), launcher
   switch S5.1. Tests: `port/notes/e36/` (numbers in PLAN.md S3.6 status).

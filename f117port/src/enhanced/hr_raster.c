@@ -63,13 +63,15 @@ void hr_raster_begin(void)
 /* ---------------------------------------------------------------- layer pixels */
 
 static u16 put_code;                               /* S3.5: the blend code of the shaded fill / line being drawn (0 otherwise) */
-static u8 put_night;                               /* S3.6: the night factor of the object fill / line being drawn (0 = none) */
+static int put_night;                              /* S3.6: how the pixels of the fill / line being drawn get their night factor (HR_NM_*) */
+static u8 put_keep;                                /* S3.6: the factor for HR_NM_KEEP */
 void hr_put(s32 x, s32 y, u8 c)
 {
     if (HR_IN_HOLE(x, y)) return;                  /* S3.4 */
     const size_t at = (size_t)y * enh_hr.lw + x;
     enh_hr.layer[at] = (u16)(0x100 | c | put_code);
-    if (enh_hr.night) enh_hr.night[at] = put_night && !hr_night_lit(c) ? put_night : 0;   /* S3.6: lights never darkened */
+    if (enh_hr.night)                              /* S3.6 */
+        enh_hr.night[at] = put_night == HR_NM_OBJ ? hr_night_obj(x, y) : put_night == HR_NM_LIT ? HR_NIGHT_LIT : put_night == HR_NM_KEEP ? put_keep : 0;
 }
 
 u8 hr_get(s32 x, s32 y)
@@ -206,7 +208,7 @@ void hr_fill(u16 colour)
     s32 y, l, r;
     if (ah < 0xFB || ah == 0xFF) {
         if (ah == 0xFF) { put_code = hr_shade_code(colour); ah = al; }   /* S3.5 */
-        put_night = hr_night_fill();                                     /* S3.6 */
+        put_night = hr_night_mode(false, al);                            /* S3.6 */
         if (!spans_begin(&sp, false)) { put_code = 0; put_night = 0; return; }
         while (spans_next(&sp, &y, &l, &r))
             for (s32 x = l; x <= r; x++) hr_put(x, y, phase(x, y) ? ah : al);
@@ -219,13 +221,14 @@ void hr_fill(u16 colour)
                 u8 nv = ah == 0xFE ? (u8)(v & al) : (u8)(v | al);
                 const u16 old = enh_hr.layer[(size_t)y * enh_hr.lw + x];   /* S3.5: the ground ramps keep the band position (AND 7Fh / 6Fh, OR 80h) */
                 put_code = (old & 0x100) && nv >= 0x60 ? (u16)(old & HR_BLEND_MASK) : 0;
-                put_night = enh_hr.night && (old & 0x100) ? enh_hr.night[(size_t)y * enh_hr.lw + x] : 0;   /* S3.6: the factor of the backdrop under it */
+                put_keep = enh_hr.night && (old & 0x100) ? enh_hr.night[(size_t)y * enh_hr.lw + x] : 0;   /* S3.6: the factor of the ground under it */
+                put_night = put_keep && put_keep != HR_NIGHT_LIT ? HR_NM_KEEP : enh_hr.night ? HR_NM_OBJ : HR_NM_NONE;
                 hr_put(x, y, nv);
             }
         put_code = 0; put_night = 0;
     } else if (ah == 0xFC) {
         if (!spans_begin(&sp, true)) return;
-        put_night = hr_night_fill();                                     /* S3.6 */
+        put_night = hr_night_mode(false, al);                            /* S3.6 */
         while (spans_next(&sp, &y, &l, &r))
             for (s32 x = l; x <= r; x++)
                 if (phase(x, y)) hr_put(x, y, al);
@@ -291,7 +294,7 @@ void hr_draw_line(s32 bx, s32 di, s32 bp, s32 cx, u8 c)
 void hr_draw_line_shaded(s32 x0, s32 y0, s32 x1, s32 y1, u16 colour)
 {
     put_code = hr_shade_code(colour);
-    put_night = hr_night_fill();                   /* S3.6 */
+    put_night = hr_night_mode(true, hr_shade_lo(colour));   /* S3.6: a line in its unshaded colour */
     hr_draw_line(x0, y0, x1, y1, (u8)colour);
     put_code = 0; put_night = 0;
 }

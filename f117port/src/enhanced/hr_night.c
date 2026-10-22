@@ -1,8 +1,15 @@
 /* S3.6 true night (DESIGN.md 2.12): the night plane of the 3D layer.
  *
- * In a night mission ([3658] != 0) with --true-night, every layer pixel the hr back end draws in the main 3D window gets a brightness factor nd / 256 in the night
- * plane (0 = shown as the original): the backdrop (sky / ground of 1442) by its elevation or its ground distance from the band geometry of 2.11, the objects by the
- * depth their shade uses (1088:0120), lights (var 10 / 11 faces, the light colours) none. The compositor multiplies the colour from the live DAC by it.
+ * In a night mission ([3658] != 0) with --true-night, every layer pixel of the main 3D window gets a brightness factor in the night plane: 1..254 = factor / 256,
+ * 255 = a light (shown as the original), 0 = no night pass. The factor is a continuous function of a per-pixel distance:
+ *   sky (above the horizon line of the band geometry, 2.11): its elevation;
+ *   ground (the backdrop and the AND / OR faces on it): the ground distance solved from the band geometry, per pixel;
+ *   objects: min(the ground distance of the pixel, the object's far depth C / 65536 + its class radius) - an object lying on the ground (terrain tiles, roads, the
+ *     sea) gets exactly the ground's factor, so neighbouring faces and the backdrop join without a seam; a standing object is never darker than its far side;
+ *   anything else the pass left without a factor (sprites: smoke, the far dots; 1x stamps; unwritten 1x pixels) gets the factor of its pixel at the end of the pass.
+ * Lights are decided by the drawing source: the faces / lines under a lights condition (var 10 / 11) and the model lines in the light colours 90h..97h; the overlay
+ * pass after the scene (explosions, tracers, flares, target boxes) is not a night pass. The compositor multiplies the live-DAC colour by the factor.
+ * A night pass also turns on the S3.5 blend codes of the bands and shaded ramps, so the colours under the factor are continuous too.
  * Nothing here writes mem[], the page or the VGA model: only hr state and the night plane. */
 #include "enhanced/hr.h"
 
@@ -22,22 +29,23 @@
 #define SKY_E       0.15       /* the e-folding elevation (tan of the angle above the horizon) */
 #define D_HORIZON   131072.0   /* the ground ring of the horizon line (the band formula: (16 - 0) 8192) */
 
-#define LUT_STEP 32.0          /* the depth curve in steps of 32 depth units up to the horizon ring */
-#define LUT_N 4097
+#define LUT_STEP 8.0           /* the depth curve in steps of 8 depth units up to the horizon ring */
+#define LUT_N 16385
 static u8 lut_d[LUT_N];
-#define SKY_LUT_N 1025         /* the sky factor in steps of 1/256 elevation */
+#define SKY_LUT_N 2049         /* the sky factor in steps of 1/512 elevation */
 static u8 lut_s[SKY_LUT_N];
 static bool lut_ready;
 
-/* the hr state of the frame being drawn (in the display-pass snapshot) */
-static struct { u8 obj; u8 queued[50]; u8 cond, light; } st;
+/* the hr state of the frame being drawn (in the display-pass snapshot): the geometry of the pass (t = ax X + ay Y + c0 - H, layer px; f the focal, fa = f alt),
+ * the far depth of the object being drawn (< 0 = none) and of the queued records, the lights condition */
+static struct { bool geo; double ax, ay, c0, f, fa; float obj; float queued[50]; u8 cond, light; } st;
 
 void hr_night_regions(void (*add)(void *p, size_t n)) { add(&st, sizeof st); }
 
 static u8 to_nd(double k)
 {
     int v = (int)lround(k * 256.0);
-    return (u8)(v < 1 ? 1 : v > 255 ? 255 : v);
+    return (u8)(v < 1 ? 1 : v > HR_NIGHT_LIT - 1 ? HR_NIGHT_LIT - 1 : v);
 }
 
 static double curve(double d) { if (d < 0) d = 0; return K_FAR + (K_NEAR - K_FAR) * exp(-d / D_LIT); }
@@ -46,21 +54,31 @@ static void lut_init(void)
 {
     if (lut_ready) return;
     for (int i = 0; i < LUT_N; i++) lut_d[i] = to_nd(curve(i * LUT_STEP));
-    for (int i = 0; i < SKY_LUT_N; i++) lut_s[i] = to_nd(SKY_TOP + (SKY_HORIZON - SKY_TOP) * exp(-(i / 256.0) / SKY_E));
+    for (int i = 0; i < SKY_LUT_N; i++) lut_s[i] = to_nd(SKY_TOP + (SKY_HORIZON - SKY_TOP) * exp(-(i / 512.0) / SKY_E));
     lut_ready = true;
 }
 
 static inline u8 nd_depth(double d)
 {
     if (!(d > 0)) return lut_d[0];
-    double i = d / LUT_STEP;
-    return i >= LUT_N - 1 ? lut_d[LUT_N - 1] : lut_d[(int)(i + 0.5)];
+    const double i = d / LUT_STEP + 0.5;
+    return i >= LUT_N - 1 ? lut_d[LUT_N - 1] : lut_d[(int)i];
 }
+
+static inline double t_of(s32 x, s32 y) { return st.ax * x + st.ay * y + st.c0; }   /* > 0 above the horizon (1x t-units) */
+static inline double ground_d(double t) { const double G = t < 0 ? -t : 0; return 1.0 / (G / st.fa + 1.0 / D_HORIZON); }
+static inline u8 sky_nd(double t)
+{
+    const double e = t > 0 ? t / st.f * 512.0 + 0.5 : 0;
+    return lut_s[e < SKY_LUT_N - 1 ? (int)e : SKY_LUT_N - 1];
+}
+static inline u8 pixel_nd(s32 x, s32 y) { const double t = t_of(x, y); return t >= 0 ? sky_nd(t) : nd_depth(ground_d(t)); }
 
 void hr_night_pass_begin(bool main_win)
 {
     enh_hr.night = NULL;
     memset(&st, 0, sizeof st);
+    st.obj = -1;
     if (!main_win || !enh_true_night_on() || !DSW(0x3658) || DSB(0x7D5E)) return;   /* the main 3D window of a night mission, not the map */
     lut_init();
     enh_hr.night = enh_layer_night();
@@ -68,33 +86,48 @@ void hr_night_pass_begin(bool main_win)
 
 /* ---------------------------------------------------------------- objects */
 
-/* at 1088:0120's inputs: the view depth C [4960] of the object's origin less 512 per size class [497A] (the depth the original shade steps on) */
-static u8 obj_now(void)
+/* the far depth of the object at 1088:0120's inputs: its view depth C [4960] plus the x radius of its size class (DS:48D6, the cull radius) */
+static float obj_now(void)
 {
-    if (!enh_hr.night) return 0;
-    s32 C = (s32)DSSL(0x4960);
-    double d = (double)C / 65536.0 - 512.0 * DSB(0x497A);
-    return nd_depth(d);
+    if (!enh_hr.night) return -1;
+    const s32 C = (s32)DSSL(0x4960);
+    u8 cls = DSB(0x497A);
+    if (cls > 7) cls = 7;
+    double d = (double)C / 65536.0 + (s16)DSW((u16)(0x48D6 + 2 * cls));
+    return (float)(d < 0 ? 0 : d);
 }
 
 void hr_night_object(void) { st.obj = obj_now(); }
 void hr_night_queue(int slot) { if (slot >= 0 && slot < 50) st.queued[slot] = obj_now(); }
-void hr_night_dequeue(int slot) { st.obj = slot >= 0 && slot < 50 ? st.queued[slot] : 0; }
+void hr_night_dequeue(int slot) { st.obj = slot >= 0 && slot < 50 ? st.queued[slot] : -1; }
 
-/* r3d_face_list: a condition on the lights variables (10, 11) holds for the next element; the element begins */
+/* r3d_face_list: a condition on the lights variables (10, 11) holds for the next element; the element begins (or is skipped) */
 void hr_night_cond(u16 v) { if (v == 10 || v == 11) st.cond = 1; }
 void hr_night_elem(void) { st.light = st.cond; st.cond = 0; }
 
-/* the factor of the object fill / line being drawn (0 = none: no night pass, a light element) */
-u8 hr_night_fill(void) { return enh_hr.night && !st.light ? st.obj : 0; }
+/* the mode of the object fill (line = false) or line being drawn in colour c (its unshaded index) */
+int hr_night_mode(bool line, u8 c)
+{
+    if (!enh_hr.night) return HR_NM_NONE;
+    if (st.light || (line && c >= 0x90 && c <= 0x97)) return HR_NM_LIT;   /* the light faces, the light strings */
+    return st.obj >= 0 ? HR_NM_OBJ : HR_NM_NONE;                          /* NONE: filled from the pixel at the end of the pass */
+}
 
-/* the light colours (unchanged by the night palettes): the EGA colours, the fire ramp, 90h..97h */
-bool hr_night_lit(u8 c) { return c < 0x10 || (c >= 0x50 && c <= 0x5F) || (c >= 0x90 && c <= 0x97); }
+/* the factor of an object pixel: its ground distance, not beyond the object's far side (above the horizon: the far side) */
+u8 hr_night_obj(s32 x, s32 y)
+{
+    if (st.obj < 0) return st.geo ? pixel_nd(x, y) : 0;              /* no object depth (an AND / OR face on a 1x pixel): the place's factor */
+    if (!st.geo) return nd_depth(st.obj);
+    const double t = t_of(x, y);
+    double d = t >= 0 ? st.obj : ground_d(t);
+    if (d > st.obj) d = st.obj;
+    return nd_depth(d);
+}
 
 /* ---------------------------------------------------------------- the backdrop */
 
-/* after 1442 (every detail level): each written, not stamped pixel of the pass window gets the sky factor of its elevation or the ground factor of its distance.
- * t(q) = -(sn (qx - w2) + cs (qy - h2) 4/3) in 1x t-units (2.11); H the horizon; the focal f = 256 << [433A], halved with [294B]; alt = [4980]. */
+/* after 1442 (every detail level): the pass geometry from the band geometry of 2.11, t(q) = -(sn (qx - w2) + cs (qy - h2) 4/3) - H in 1x t-units; the focal
+ * f = 256 << [433A], halved with [294B]; alt = [4980]. Then every written, not stamped pixel of the pass window gets its sky / ground factor. */
 void hr_night_backdrop(s16 H)
 {
     if (!enh_hr.night || !enh_hr.on || !enh_hr.layer) return;
@@ -102,34 +135,36 @@ void hr_night_backdrop(s16 H)
     const double sn = (double)(s16)(u16)-DSW(0x498A) / 32768.0, cs = (double)(s16)DSW(0x498C) / 32768.0;
     const double w2 = (s16)DSW(0x0D1E), h2 = (s16)DSW(0x0D20);
     const double ox = (double)enh_hr.ox + enh_hr.e2dx, oy = (double)enh_hr.oy + enh_hr.e2dy;
-    const double ax = -sn / N, ay = -cs * (4.0 / 3.0) / N;           /* t = ax X + ay Y + c0 (layer px) */
-    const double c0 = sn * (ox / N + w2) + cs * (4.0 / 3.0) * (oy / N + h2);
+    st.ax = -sn / N; st.ay = -cs * (4.0 / 3.0) / N;
+    st.c0 = sn * (ox / N + w2) + cs * (4.0 / 3.0) * (oy / N + h2) - H;
     double f = 256.0;
     const u8 z = DSB(0x433A);
     if (z && (z & 0x1F) < 16) f *= (double)(1 << (z & 0x1F));
     if (DSB(0x294B)) f /= 2;
-    s16 alt = (s16)DSW(0x4980);
-    const double fa = f * (alt > 1 ? alt : 1);
-    for (s32 y = enh_hr.ymin; y <= enh_hr.ymax; y++) {
-        if (y < 0 || y >= enh_hr.lh) continue;
+    const s16 alt = (s16)DSW(0x4980);
+    st.f = f; st.fa = f * (alt > 1 ? alt : 1);
+    st.geo = true;
+    for (s32 y = enh_hr.ymin < 0 ? 0 : enh_hr.ymin; y <= enh_hr.ymax && y < enh_hr.lh; y++) {
         const u16 *row = enh_hr.layer + (size_t)y * enh_hr.lw;
         u8 *nrow = enh_hr.night + (size_t)y * enh_hr.lw;
-        const double ty = ay * y + c0;
         for (s32 x = enh_hr.xmin < 0 ? 0 : enh_hr.xmin; x <= enh_hr.xmax && x < enh_hr.lw; x++) {
-            const u16 l = row[x];
-            if ((l & 0x300) != 0x100 || HR_IN_HOLE(x, y)) continue;
-            const u8 c = (u8)l;
-            const double t = ax * x + ty - H;                      /* > 0 above the horizon */
-            bool sky = t >= 0;
-            if (c >= 0x80 && c <= 0x8F) sky = true;
-            else if (c >= 0x70 && c <= 0x7F) sky = false;
-            if (sky) {
-                const double e = t > 0 ? t / f * 256.0 + 0.5 : 0;
-                nrow[x] = lut_s[e < SKY_LUT_N - 1 ? (int)e : SKY_LUT_N - 1];
-            } else {
-                const double G = t < 0 ? -t : 0;
-                nrow[x] = nd_depth(1.0 / (G / fa + 1.0 / D_HORIZON));
-            }
+            if ((row[x] & 0x300) != 0x100 || HR_IN_HOLE(x, y)) continue;
+            const u8 c = (u8)row[x];
+            const double t = t_of(x, y);
+            if (c >= 0x80 && c <= 0x8F) nrow[x] = sky_nd(t);                  /* a band pixel the edge rounding put across the horizon line: its own side's */
+            else if (c >= 0x70 && c <= 0x7F) nrow[x] = nd_depth(ground_d(t));  /* value at the line (sky_nd / ground_d clamp t at 0) */
+            else nrow[x] = pixel_nd(x, y);
         }
+    }
+}
+
+/* the end of the main pass: every pixel of the window still without a factor (sprites, dots, stamps, 1x pixels) gets the factor of its place */
+void hr_night_pass_end(void)
+{
+    if (!enh_hr.night || !st.geo) return;
+    for (s32 y = enh_hr.ymin < 0 ? 0 : enh_hr.ymin; y <= enh_hr.ymax && y < enh_hr.lh; y++) {
+        u8 *nrow = enh_hr.night + (size_t)y * enh_hr.lw;
+        for (s32 x = enh_hr.xmin < 0 ? 0 : enh_hr.xmin; x <= enh_hr.xmax && x < enh_hr.lw; x++)
+            if (!nrow[x] && !HR_IN_HOLE(x, y)) nrow[x] = pixel_nd(x, y);
     }
 }

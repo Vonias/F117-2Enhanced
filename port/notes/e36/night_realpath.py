@@ -6,7 +6,7 @@
    block and ROSTER.FIL identical, no forbidden call in a display pass.
 2. The view sweep of port/notes/e34/wide_realpath.py (16:9 window, N = 4, --wide) at night without / with the option (and with --smooth-shading without / with
    it) and by day without / with it: the runs end normally with the same number of frames and display passes with no forbidden call; per dumped frame (one per
-   view) the share of canvas pixels the option changes and their brightness against option off; no pixel gets brighter; by day no pixel changes.
+   view) the share of canvas pixels the option changes and their brightness against option off; no pixel gets brighter than option off with --smooth-shading (true night blends what it darkens); by day no pixel changes.
 With --png DIR: DIR/night_<view>_<off|on|son>.png (son = with --smooth-shading) and DIR/contact_night.png (rows: views, columns: off, on, on + smooth).
 
 usage: python night_realpath.py <f117 executable> <game dir> <work dir> [--png DIR]      exit 77 without the game files
@@ -93,7 +93,7 @@ def sweep_runs(exe, game, work, night, opts):
     return out
 
 
-def pair(out, a, b, name, day):
+def pair(out, a, b, name, day, ref=None):
     import numpy as np
     frames = WR.png_frames()
     bad = 0 if out[a][0] and out[b][0] and out[a][2] == out[b][2] else 1
@@ -105,10 +105,11 @@ def pair(out, a, b, name, day):
             bad += 1
             continue
         x, y = load_raw(fa), load_raw(fb)
+        xr = load_raw('%s_%04d.raw' % (out[ref][1], frames[v])) if ref else x   # a night pass blends its colours (S3.5): no brighter than the blended picture
         d = x != y
         brighter = 0
         for sh in (0, 8, 16):
-            brighter += int((((y >> sh) & 255) > ((x >> sh) & 255)).sum())
+            brighter += int((((y >> sh) & 255) > ((xr >> sh) & 255)).sum())
         la, lb = float(lum(x).sum()), float(lum(y).sum())
         parts.append('%s %.0f %% changed, %.0f %% bright%s' % (v, 100 * float(d.mean()), 100 * lb / max(1.0, la), ', %d brighter' % brighter if brighter else ''))
         if brighter or (day and d.any()) or (not day and v in ('front_clean', 'chase') and lb > 0.75 * la):
@@ -178,7 +179,7 @@ def main():
     bad += hash_pair(exe, game, work, 'night_smooth', True, '--smooth-shading')
     night = sweep_runs(exe, game, work, True, (('off', '--wide'), ('on', '--wide --true-night'), ('soff', '--wide --smooth-shading'),
                                                 ('son', '--wide --smooth-shading --true-night')))
-    b1, i1 = pair(night, 'off', 'on', 'night', False)
+    b1, i1 = pair(night, 'off', 'on', 'night', False, 'soff')
     b2, i2 = pair(night, 'soff', 'son', 'night, smooth shading', False)
     bad += b1 + b2
     day = sweep_runs(exe, game, work, False, (('off', '--wide'), ('on', '--wide --true-night')))

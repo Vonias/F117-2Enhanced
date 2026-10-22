@@ -102,20 +102,24 @@ void hr_shade_object(void);                        /* r3d_place_object (E7AC) af
 void hr_shade_queue(u16 e);                        /* r3d_queue_insert (DDFE) after the record's +4 shade: the continuous shade of record e */
 void hr_shade_dequeue(u16 rec);                    /* r3d_draw_queued (DF08) after [4894] = record +4 */
 void hr_shade_colour(u16 colour);                  /* r3d_setcolor_M (1359:01D4): the colour word before the shade (its unshaded low byte) */
+u8   hr_shade_lo(u16 colour);                       /* S3.6: the unshaded low byte of the colour word being drawn */
 u16  hr_shade_code(u16 colour);                    /* the blend code of a fill / line in the colour word (DS:85D6 after set_colour_M); 0 = not a shaded colour */
 void hr_band_blend(s16 H, const s16 *sky, const s16 *gnd);   /* hr_sky_ground after the bands: the per-pixel code of the band pixels */
 void hr_shade_regions(void (*add)(void *p, size_t n));
 
-/* ---- S3.6 true night (hr_night.c, DESIGN 2.12): the night plane (u8 per layer pixel, 0 = as the original, else the brightness factor / 256), only in the main 3D window
- * of a night mission with --true-night */
+/* ---- S3.6 true night (hr_night.c, DESIGN 2.12): the night plane (u8 per layer pixel: 0 = no night pass, 1..254 = the brightness factor / 256, HR_NIGHT_LIT = a
+ * light, shown as the original), only in the main 3D window of a night mission with --true-night */
+#define HR_NIGHT_LIT 255
+enum { HR_NM_NONE, HR_NM_OBJ, HR_NM_LIT, HR_NM_KEEP };   /* how hr_put sets the factor: none (filled at the pass end), the object's, a light, a given value */
 void hr_night_pass_begin(bool main_win);           /* a pass opens: enh_hr.night = the plane or NULL */
+void hr_night_pass_end(void);                      /* the main pass ends: the pixels left without a factor get the factor of their place */
 void hr_night_object(void);                        /* hr_shade_object: the factor of the object being drawn, from its depth */
 void hr_night_queue(int slot);                     /* hr_shade_queue: ... of DDFE record slot */
 void hr_night_dequeue(int slot);                   /* hr_shade_dequeue */
 void hr_night_cond(u16 v);                         /* r3d_face_list: a condition on variable v holds (10 / 11 = the lights) */
 void hr_night_elem(void);                          /* r3d_face_list: an element (polygon / lines) begins */
-u8   hr_night_fill(void);                          /* the factor of the object fill / line being drawn (0 = none) */
-bool hr_night_lit(u8 c);                           /* a light colour: never darkened */
+int  hr_night_mode(bool line, u8 c);               /* the mode of the object fill / line being drawn in colour c */
+u8   hr_night_obj(s32 x, s32 y);                   /* the factor of an object pixel */
 void hr_night_backdrop(s16 H);                     /* hr_sky_ground after the backdrop: the sky / ground factors of its pixels */
 void hr_night_regions(void (*add)(void *p, size_t n));
 
