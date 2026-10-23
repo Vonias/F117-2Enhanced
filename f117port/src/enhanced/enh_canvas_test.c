@@ -28,7 +28,8 @@ static const GeomCase geom[] = {
     { ENH_VIEW_FRONT, 3440, 1440, false, 0, true, 3440, 1440, 7, 600,  40,   0,   0, 3440, 1440 },
     { ENH_VIEW_FIT,   3440, 1440, false, 0, true, 2560, 1600, 8,   0,   0,   0,   0, 2560, 1600 },
     { ENH_VIEW_SIDE,  1920, 1080, true, 0, true, 2133, 1000, 5, 266,   0,   0,   0, 2133, 1000 },   /* the second cockpit view: extended sideways only */
-    { ENH_VIEW_FRONT, 1920, 1080, false, 8, true, 2560, 1600, 8,   0,   0,   0,   0, 2560, 1600 },   /* S3.4: a fixed scale is kept (the canvas holds the frame; the host scales it down) */
+    { ENH_VIEW_FRONT, 1920, 1080, false, 8, true, 2845, 1600, 8, 142,   0,   0,   0, 2845, 1600 },   /* S3.4: a fixed scale is kept; the canvas is the window's aspect around the frame (the host scales it down) */
+    { ENH_VIEW_FRONT, 1920, 1080, true,  8, true, 3414, 1600, 8, 427,   0,   0,   0, 3414, 1600 },   /* the same in 4:3 pixels (window 1920 x 900 logical) */
     { ENH_VIEW_FRONT, 1000, 1000, false, 0, true, 1000, 1000, 3,  20, 400,   0,   0, 1000, 1000 },
     { ENH_VIEW_FRONT, 200, 150, true, 0, true,    320,  200, 1,   0,   0,   0,   0,  320,  200 },
     { ENH_VIEW_FRONT, 1920, 1080, true, 0, false, 1280, 800, 4,   0,   0,   0,   0, 1280,  800 },
@@ -79,7 +80,11 @@ int enh_wide_geometry_test(void)
                 if (fit < 1) fit = 1;
                 const bool hfit = cls == ENH_VIEW_FIT || cls == ENH_VIEW_SIDE;     /* S3.4 fix: filling the window height (the host scales the canvas) */
                 const int n = fixed ? fixed : hfit ? (lh + 199) / 200 : fit;
-                int clw = lw > 320 * n ? lw : 320 * n, clh = lh > 200 * n ? lh : 200 * n;
+                int clw = lw, clh = lh;
+                if (lw < 320 * n || lh < 200 * n) {                       /* the window's aspect, grown to hold the frame */
+                    const long long w = ((long long)200 * n * lw + lh - 1) / lh;
+                    if (w >= 320 * n) { clw = (int)w; clh = 200 * n; } else { clw = 320 * n; clh = (int)(((long long)320 * n * lh + lw - 1) / lw); }
+                }
                 if (cls == ENH_VIEW_FIT) { clw = 320 * n; clh = 200 * n; }
                 if (cls == ENH_VIEW_SIDE) { clh = 200 * n; clw = (int)((long long)lw * clh / lh); if (clw < 320 * n) clw = 320 * n; }
                 const bool ext = cls != ENH_VIEW_FIT;

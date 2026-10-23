@@ -79,8 +79,12 @@ void enh_canvas_geometry(EnhCanvas *c, EnhView v, int win_w, int win_h, bool asp
     }
     int n = fixed_n > 0 ? fixed_n : fit;                       /* S3.4: a fixed scale is kept, as without wide (the canvas then holds at least the frame) */
     if (n > MAX_SIDE / 320) n = MAX_SIDE / 320;
-    if (lw < 320 * n) lw = 320 * n;
-    if (lh < 200 * n) lh = 200 * n;
+    if (lw < 320 * n || lh < 200 * n) {                         /* the frame is larger than the window: the smallest canvas of the window's aspect that holds it (the host
+                                                                 * scales it down), so a fixed scale keeps the wider view */
+        long long w = ((long long)200 * n * lw + lh - 1) / lh;
+        if (w >= 320 * n) { lw = (int)w; lh = 200 * n; }
+        else { lh = (int)(((long long)320 * n * lh + lw - 1) / lw); lw = 320 * n; }
+    }
     if (lw > MAX_SIDE) lw = MAX_SIDE;
     if (lh > MAX_SIDE) lh = MAX_SIDE;
     c->lw = lw; c->lh = lh; c->n = n;
