@@ -141,9 +141,14 @@ Notes:
 ### Phase 4 — Frame rate
 | Id | Task | Model | Size | Status |
 |---|---|---|---|---|
-| S4.1 | Decouple sim and display: display passes in the `frame_floor` wait at the monitor rate (vsync / `--fps N`), alpha, lerp of the own aircraft and camera; the `sim_interp_equal` ctest (DESIGN 4.1, 4.3, 4.6) | O | M | |
-| S4.2 | Interpolate the objects: units, projectiles, tracers, smoke, wreck, spinners, the delayed view's pose ring; jump detection (DESIGN 4.3, 4.4) | S | M | |
-| S4.3 | Input at display rate: audit that keyboard/gamepad events keep reaching the sim unchanged between steps (no averaging, no flight-model change); latency check | S | S | |
+| S4.1 | Decouple sim and display: a display pass per monitor refresh in the `frame_floor` wait (`--fps vsync|60|30|off`, default vsync; `--classic` = off), alpha from the **display clock** (SDL performance counter, never ticks or cycles), linear lerp of the own aircraft and the camera (DESIGN 4.1, 4.3, 4.6); hold (alpha = 1, no lerp) in menus, pause, the quit requester, view changes, eject/crash; ctests `sim_interp_equal` (the sim bit-identical with `--fps` on/off) and a per-frame camera jerk trace (steps between refreshes even, no backward step) | O | M | |
+| S4.2 | Interpolate the objects: units, projectiles, missiles, tracers, smoke, falling wreck, spinners (radar dishes), the delayed view's pose ring; matched by slot + type, jump detection (DESIGN 4.3); the HUD (ladder, horizon, heading tape, ADI, target boxes, velocity vector) redrawn from the lerped attitude so it stays locked to the world (DESIGN 4.4); jerk trace per object class | O | M | |
+| S4.3 | One render per refresh: the S3.4 wide pass and the display pass merged (a refresh renders the extended view once, not main + wide), the canonical frame's own render reused when alpha = 1; profile render / compose / present at 1920x1080 and 2560x1440, N = 4, wide, smooth shading, true night; budget 16.7 ms (60 Hz), measured per stage; fall back to 30 Hz display when over budget | O | M | |
+| S4.4 | Input and latency: audit that keyboard / gamepad / mouse events reach the sim unchanged between steps (no averaging, no flight-model change); measure key-to-screen latency classic vs enhanced (interpolation shows one step behind: ~100 ms at Game speed 7); sound timing unchanged | S | S | |
+| S4.5 | Launcher: "Frame rate" (Monitor / 60 / 30 / Off) in the Enhanced box (reopens S5.1), settings key, `launcher_args` cases; README | H | S | |
+
+Notes:
+- Phase 4 plan (2026-10-26) follows the other Enhanced ports (AcesOfThePacificEnhanced, FS1Enhanced, TestDrive2/3Enhanced, StreetRod2Enhanced): the sim keeps its original step rate and is never changed for smoothness; the display interpolates between the last two sim states (no extrapolation: it overshoots on lumpy input, TD3 / TD2 lessons); the blend is timed by the display clock (FS1 / AotP: a cycle-based clock stalled); angles on the shortest 16-bit arc; identity matching + jump detection instead of guessing; hold during menus / pause / crash; one launcher control plus `--classic` to compare; verified with a deterministic sim-equality test and a per-frame jerk trace, then a U-check by eye. Unlike FS1 / TD3, the F-117 HUD is interpolated too (S4.2), because its ladder and horizon are drawn over the world and would visibly lag it.
 
 ### Phase 5 — Settings and launcher
 | Id | Task | Model | Size | Status |
