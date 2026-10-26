@@ -37,7 +37,7 @@ How to play).
 
 - The frame rate is still the original's (one picture per game step, about 10 a second at the default Game
   speed). Smoother frames are the next stage.
-- Wide view: the first frame after a change of view has black beside the picture; at very wide windows
+- Wide view: at very wide windows
   (about 21:9 and wider) a thin sliver of the sky band can show at the far edge in steep rolls; objects
   that the wide view adds at the sides can overlap into the 4:3 picture; the wide view makes each frame
   slower to draw. Portrait windows fit the picture to the width.
