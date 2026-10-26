@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Build the release zip (F117-SDL3-v<version>-win64.zip) from a clean Release build with the launcher.
+"""Build the release zip (F117-Enhanced-v<version>-win64.zip) from a clean Release build with the launcher.
 
   python tools/make_release.py
 
 Steps: a fresh configure of f117port/build-release (-DF117_LAUNCHER=ON), the build, ctest (any failure stops
-the script), the staged folder release/F117-SDL3-v<version>/ and the zip beside it. The MSYS2 mingw64 tools are
+the script), the staged folder release/F117-Enhanced-v<version>/ and the zip beside it. The MSYS2 mingw64 tools are
 put first on PATH if they are in C:\\msys64 (override with MSYS2_MINGW64_BIN).
 
 No original game file is ever staged or zipped: the names are taken from the launcher's own list (MissingGameFile
@@ -22,8 +22,23 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-VERSION = "0.1.0"
-NAME = f"F117-SDL3-v{VERSION}"
+
+
+def read_version():
+    text = (ROOT / "f117port" / "src" / "version.h").read_text(encoding="utf-8")
+    m = re.search(r'#define\s+F117_VERSION\s+"([^"]+)"', text)
+    if not m:
+        fail("could not read F117_VERSION from f117port/src/version.h")
+    return m.group(1)
+
+
+def fail(message):
+    print(f"make_release: {message}", file=sys.stderr)
+    sys.exit(1)
+
+
+VERSION = read_version()
+NAME = f"F117-Enhanced-v{VERSION}"
 RELEASE = ROOT / "release"
 STAGE = RELEASE / NAME
 ZIP = RELEASE / f"{NAME}-win64.zip"
@@ -33,11 +48,6 @@ MSYS2_BIN = Path(os.environ.get("MSYS2_MINGW64_BIN", r"C:\msys64\mingw64\bin"))
 
 # The game's own file names are the launcher's list, read from its source so there is one list.
 LAUNCHER_GAME_CPP = ROOT / "f117port" / "launcher" / "game.cpp"
-
-
-def fail(message):
-    print(f"make_release: {message}", file=sys.stderr)
-    sys.exit(1)
 
 
 def launcher_game_names():
@@ -122,7 +132,7 @@ def stage(guard):
     if STAGE.exists():
         shutil.rmtree(STAGE)
     STAGE.mkdir(parents=True)
-    exe = [BUILD / "f117.exe", BUILD / "F-117A Nighthawk.exe"]
+    exe = [BUILD / "f117-enhanced.exe", BUILD / "f117-enhanced-launcher.exe"]
     dlls = sorted(BUILD.glob("*.dll"))
     if not all(p.is_file() for p in exe) or not dlls:
         fail(f"the build did not produce the programs and DLLs in {BUILD}")

@@ -27,6 +27,7 @@ remove it when it is done.
 ## Status
 
 - **Done:** S0.1 (repo from the faithful port), S1.1 (`DESIGN.md`, the render and timing design), S2.1 (canvas, compositor, shadow plane; U1 OK 2026-10-19), S2.2 (render3d at N×; U1 OK 2026-10-20), S2.3 (tests, reference rasteriser, dumps; U1 OK 2026-10-20), S2.4 (sandboxed display pass, hash ctest), S3.1 (objects and views at N×; U1 OK 2026-10-20), S3.2 (TV camera and map MFD at N×; U1 OK 2026-10-20), S3.3 (HUD and MFD vector graphics at N×; U1 OK 2026-10-21), S3.4 (wider view; U1 OK 2026-10-22), S3.5 (smooth distance shading, option; U1 OK 2026-10-22), S3.6 (true night, option; U1 OK 2026-10-26).
+- **Release:** v0.1.0 package built (S6.1), not yet released.
 - **Next:** Phase 4, S4.1 (decouple sim and display). Your tasks: **User to-do** above (U1 of S5.1).
 - Escalation rule: a subtask that fails twice on Sonnet → new Opus session with a 5-line note
   (symptom, file, what was tried). Never carry an old transcript over.
@@ -158,9 +159,10 @@ Notes:
 ### Phase 6 — Release
 | Id | Task | Model | Size | Status |
 |---|---|---|---|---|
-| S6.1 | README features, CHANGELOG, `tools/make_release.py` adapted (`f117-enhanced`, launcher), v0.1.0 zip | H | S | |
+| S6.1 | README features, CHANGELOG, `tools/make_release.py` adapted (`f117-enhanced`, launcher), v0.1.0 zip | H | S | package ready 2026-10-26 (not released) |
 
 Notes:
+- S6.1 (2026-10-26): `python tools/make_release.py` (version read from `f117port/src/version.h`) built a clean Release with the launcher, ran all 39 ctests (all passed, 2364 s) and wrote `release/F117-Enhanced-v0.1.0-win64.zip` (10.66 MB, 45 files, SHA-256 c17f3b0d...): both exes, 17 DLLs (SDL3, wxWidgets, mingw runtime, image libs), README, CHANGELOG, LICENSE, 20 licence files, `Game/PUT_GAME_FILES_HERE.txt`. Game-file guard passed. Smoke test from an extracted copy: `--version` = 0.1.0, launcher `--print-command` OK. No tag, no push, no GitHub release yet. Open: the optional clean pilot roster (no clean original found, see the session report).
 - S1.1–S5.2 come from the faithful plan's S6.2 ("native-resolution / widescreen / 60 fps 3D view, longer view
   distance"): resolution, frame rate and the wider view are taken; view distance is parked (TODO below).
 - Bugs in the engine: fix in `../F117-2` first (patch release when it matters), then port here.
