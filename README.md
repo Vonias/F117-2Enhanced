@@ -1,7 +1,7 @@
 # F-117A Enhanced — SDL3
 
 An enhanced native port of MicroProse's *F-117A Nighthawk Stealth Fighter 2.0* (1991), built on the faithful
-SDL3 port (`../F117-2`, v0.1.0), in the making. Not an emulator. The original game files are not included.
+SDL3 port ([F117-2](https://github.com/kylofon/F117-2), v0.1.0). Not an emulator. The original game files are not included.
 Goal: a sharper, smoother game (higher resolution, higher frame rate) with the original art unchanged.
 
 Status and plan: [PLAN.md](PLAN.md) (as a page: `python tools/plan_site.py`, then open
