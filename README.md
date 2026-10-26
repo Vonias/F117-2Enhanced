@@ -27,6 +27,9 @@ Not yet: a higher frame rate (the next stage). See [CHANGELOG.md](CHANGELOG.md).
    folder beside it). The folder must be writable: the game saves your pilot roster there.
 4. Set the Enhanced options if you like and press **Play**. In SETUP answer **N** for the joystick and **2** for AdLib.
 
+`roster/ROSTER.FIL` is the game's pilot roster as shipped by this package; to start with it, copy it into your game
+folder (back up your own `ROSTER.FIL` first).
+
 The errors the game reports go to `f117.log` beside the program.
 
 ## Command line

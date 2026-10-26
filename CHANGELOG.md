@@ -23,6 +23,9 @@ How to play).
   and Classic. The settings are kept in `%APPDATA%\F-117A Enhanced\settings.ini`.
 - **`--classic`**: every enhancement off; the game behaves as the faithful port.
 
+- `roster/ROSTER.FIL` is the game's pilot roster as shipped by this package; to start with it, copy it into your game
+  folder (back up your own `ROSTER.FIL` first).
+
 ### Command line
 
 - `--render-scale N`, `--wide` / `--no-wide`, `--smooth-shading` / `--no-smooth-shading`,

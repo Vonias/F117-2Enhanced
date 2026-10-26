@@ -46,6 +46,13 @@ BUILD = ROOT / "f117port" / "build-release"
 GAME_DIR = Path(os.path.realpath(ROOT / "Game"))
 MSYS2_BIN = Path(os.environ.get("MSYS2_MINGW64_BIN", r"C:\msys64\mingw64\bin"))
 
+# The ONE original game file that may be packaged (user-approved 2026-10-26): the pilot roster, taken unedited from
+# the faithful repo's backup of 2026-10-14 and staged as roster/ROSTER.FIL. It is accepted only by this exact
+# archive name AND this exact SHA-256; every other game file stays forbidden.
+ROSTER_SRC = ROOT.parent / "F117-2" / "work" / "backup" / "ROSTER.FIL.2026-10-14"
+ROSTER_ARC = "roster/ROSTER.FIL"
+ROSTER_SHA256 = "26447d654d6bc5a456767e64849201076462e1e20c0e124887824f2e7bc382b6"
+
 # The game's own file names are the launcher's list, read from its source so there is one list.
 LAUNCHER_GAME_CPP = ROOT / "f117port" / "launcher" / "game.cpp"
 
@@ -89,6 +96,8 @@ class GameGuard:
 
     def check_file(self, path, arcname):
         """Refuse a file that is an original game file by name, or by size and content."""
+        if arcname == ROSTER_ARC and sha256(path) == ROSTER_SHA256:
+            return   # the single approved exception
         if arcname.upper().split("/")[-1] in self.forbidden:
             fail(f"refusing to stage {arcname}: its name is an original game file")
         same_size = self.by_size.get(path.stat().st_size, [])
@@ -141,6 +150,7 @@ def stage(guard):
     files += [(ROOT / "README.md", "README.md"), (ROOT / "CHANGELOG.md", "CHANGELOG.md"),
               (ROOT / "LICENSE", "LICENSE")]
     files += [(p, p.relative_to(ROOT).as_posix()) for p in sorted((ROOT / "licenses").rglob("*")) if p.is_file()]
+    files.append((ROSTER_SRC, ROSTER_ARC))
     for src, rel in files:
         if not src.is_file():
             fail(f"missing {src}")
@@ -172,6 +182,11 @@ def check_zip(guard, zip_path):
     with zipfile.ZipFile(zip_path) as z:
         entries = [i for i in z.infolist() if not i.is_dir()]
         for info in entries:
+            if info.filename == f"{NAME}/{ROSTER_ARC}":
+                with z.open(info) as f:
+                    if hashlib.sha256(f.read()).hexdigest() != ROSTER_SHA256:
+                        fail("roster/ROSTER.FIL in the zip is not the approved file")
+                continue
             base = info.filename.split("/")[-1].upper()
             if base in guard.forbidden:
                 fail(f"the zip holds a game file name: {info.filename}")
@@ -188,7 +203,8 @@ def check_zip(guard, zip_path):
 def main():
     guard = GameGuard()
     print(f"game folder: {GAME_DIR} ({len(guard.game_names)} files), launcher list: {len(guard.launcher)} names")
-    build_and_test()
+    if "--stage-only" not in sys.argv:   # --stage-only: reuse the Release build in build-release (already tested)
+        build_and_test()
     files = stage(guard)
     zip_path = make_zip(files)
     entries = check_zip(guard, zip_path)
