@@ -18,6 +18,7 @@
 #include "enhanced/enh_canvas.h"   /* ENH: the canvas */
 #include "enhanced/enhanced.h"
 #include "enhanced/sandbox.h"     /* ENH: S2.4 */
+#include "enhanced/record.h"      /* ENH: video capture aid (F117_RECORD) */
 
 #define OPL_RATE 49716u                /* Nuked-OPL3 native rate; SDL resamples */
 
@@ -306,6 +307,8 @@ static void present_log(void)
 static void present(void)
 {
     present_log();                                        /* ENH: S3.4 test aid */
+    if (enh_record_on()) enh_record_frame(frame, frame_w, frame_h, view_w(), view_h(),   /* ENH: capture aid (F117_RECORD), the clock read without advancing it */
+                                          (double)((vclock ? vclock_ns : SDL_GetTicksNS()) - clock_start_ns) / 1e9);
     snapshot();
     if (!texture) return;
     SDL_UpdateTexture(texture, NULL, frame, frame_w * 4);
@@ -382,6 +385,17 @@ void host_pump(void)
     }
     if (budget < 0)                                 /* fell too far behind: resynchronise the clock */
         clock_start_ns = now - (tick_due_ns(ticks_run) - clock_start_ns);
+    if (worked && enh_record_on()) {                /* ENH: capture aid (F117_RECORD), the OPL chip rendered up to the last tick */
+        static Uint64 rec_done;
+        const Uint64 due = ticks_run * OPL_RATE * (VGA_FRAME_NS_NUM / 1000000ull) / (VGA_FRAME_NS_DEN * 1000ull);
+        s16 buf[2 * 1024];
+        while (rec_done < due) {
+            const int n = (int)SDL_min(due - rec_done, (Uint64)1024);
+            OPL3_GenerateStream(&opl, buf, (uint32_t)n);
+            enh_record_audio(buf, n);
+            rec_done += (Uint64)n;
+        }
+    }
 
     /* Present at most once per ~8 ms; VSync paces it further. */
     if (frame_source && now - last_present_ns >= 8 * SDL_NS_PER_MS) {
