@@ -159,7 +159,7 @@ Notes:
 ### Phase 6 — Release
 | Id | Task | Model | Size | Status |
 |---|---|---|---|---|
-| S6.1 | README features, CHANGELOG, `tools/make_release.py` adapted (`f117-enhanced`, launcher), v0.1.0 zip | H | S | package ready 2026-10-26 (not released) |
+| S6.1 | README features, CHANGELOG, `tools/make_release.py` adapted (`f117-enhanced`, launcher), v0.1.0 zip | H | S | released 2026-10-26 (public: github.com/kylofon/F117-2Enhanced, tag v0.1.0) |
 
 Notes:
 - S6.1 (2026-10-26): `python tools/make_release.py` (version read from `f117port/src/version.h`) built a clean Release with the launcher, ran all 39 ctests (all passed, 2364 s) and wrote `release/F117-Enhanced-v0.1.0-win64.zip` (10.66 MB, 46 files, SHA-256 ef2591bc87d0...; includes the approved roster/ROSTER.FIL = the faithful backup 2026-10-14, SHA-256 26447d654d6b..., sole exception in the guard): both exes, 17 DLLs (SDL3, wxWidgets, mingw runtime, image libs), README, CHANGELOG, LICENSE, 20 licence files, `Game/PUT_GAME_FILES_HERE.txt`. Game-file guard passed. Smoke test from an extracted copy: `--version` = 0.1.0, launcher `--print-command` OK. No tag, no push, no GitHub release yet. Open: the optional clean pilot roster (no clean original found, see the session report).
@@ -196,7 +196,7 @@ Several bugs in one message; one session then fixes them in a batch.
 3. **2D art scaling**: default = nearest-neighbour (the original pixels, sharp). A smoothing filter is not planned
    (it would change the art's look).
 4. **Wider view**: settled 2026-10-19 (see Decisions). **Longer view distance**: default = parked.
-5. **GitHub**: create a private `kylofon/F117-2Enhanced` when you want it; default: local only until the first release.
+5. **GitHub**: public `kylofon/F117-2Enhanced` since 2026-10-26 (v0.1.0 released).
 
 ## Decisions
 (Settled answers from U3 go here, dated.)
