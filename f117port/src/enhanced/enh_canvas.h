@@ -52,6 +52,9 @@ bool enh_canvas_update(int win_w, int win_h, bool aspect43);
 void enh_canvas_test_window(int w, int h);              /* S3.4, the render test: the canvas follows this window (1:1 pixels) instead of the host's; 0 = the host's */
 /* Composes the live VGA page (CRTC start / pan, DAC) with the layers into the canvas; false when it did not change. */
 bool enh_compose_vga(u32 *xrgb);
+/* VR: when set (lw x lh bytes), enh_compose_vga also writes each canvas pixel's class: 0 black, 1 art, 2 world (3D layer), 3 vector,
+ * 4 world shown as its 1x pixel (enh_canvas.c CLS_*). */
+extern u8 *enh_cls_out;
 void enh_canvas_to_frame(int *x, int *y);               /* canvas pixel -> 320x200 frame pixel (clamped), for the mouse */
 void enh_frame_to_canvas(int *x, int *y);
 

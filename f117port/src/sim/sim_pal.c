@@ -1,5 +1,6 @@
 /* VGAME's palettes (segment 1088, 14A2:00C5, 0000:4857, 0000:4D43; spec simflow.md Part 1 section 6): the flight palette A/B/C by day, night and climate,
  * the MFD green ramp, the save / restore pair of the quit requester, the one-colour-per-16-seconds drift towards the day/night palette. */
+#include <stdlib.h>   /* VR: getenv */
 #include <string.h>
 
 #include "sim/sim.h"
@@ -51,7 +52,14 @@ void sim_reset_clock_palette(void)
     DSW(0x9870) = (u16)(n << 8);
     DSW(0x98E2) = 0;
     u16 target = DSW(0x3658) ? 0x1C4A : 0x164A;
-    for (int k = 0; k < n * 2; k++) pal_fade_step(DSP(0x104A), DSP(target), 0x100);
+    int steps = n * 2;
+#ifdef F117_VR
+    {   /* VR: a day mission in full daylight: the walk runs all the way to palette A (64 steps cover the 6-bit range) */
+        const char *midday = getenv("F117_MIDDAY");
+        if (midday && *midday == '1' && !DSW(0x3658)) steps = 64;
+    }
+#endif
+    for (int k = 0; k < steps; k++) pal_fade_step(DSP(0x104A), DSP(target), 0x100);
     pal_write_vsync(DSP(0x104A), 0, 0x100);
     pal_mfd_ramp_green();
 }

@@ -155,6 +155,39 @@ static void flight_keys(u16 key)
     }
 }
 
+bool (*fl_ext_fm)(FlExt *s);   /* ENH: VR */
+
+/* ENH: VR, the outside flight model's frame: its state in the game's variables, what 2.2-2.4 and 2.6-2.9 would have made */
+static void ext_state(const FlExt *x)
+{
+    SETW(0xDE8A, 0); SETW(0xE446, 0);
+    if (x->stick) SETW(0x3652, 0);                                        /* the stick takes over from the autopilot */
+    hud_lamp_update(4, U(0x3652) != 0 ? 15 : 0);
+    SETW(0x98DC, fx_clamp_wrap(x->g16, -0x40, 0x80));
+    g_text();
+    SETW(0xE448, x->stall);
+    SETW(0xB00A, x->stall * 0x1B);
+    SETW(0xB052, (u16)(x->speed > 0 ? x->speed : 0) * 27);
+    SETW(0xB168, x->speed > 0 ? x->speed : 0);
+    sim_snd_cmd(0x17, U(0xB168), 0, 0);
+    SETW(0x98C6, x->aoa);
+    SETW(0x2DEE, x->heading); SETW(0x2DF0, x->pitch); SETW(0x2DF2, x->roll);
+    SETW(0x98E0, 0);
+    fm_mat_from_euler();
+    if (S(0xE2FE) != 0) {
+        s16 si = fl_abs16(S(0x2DF2));
+        si = (s16)((si + (si < 0 ? 1 : 0)) >> 1);
+        DSB(0xE542) = ((int)fl_abs16(S(0x2DF0)) - si) > 0x1000 ? 1 : 0;
+    } else {
+        DSB(0xE542) = 1;
+    }
+    DSL(0xBA10) = (u32)x->x;
+    DSL(0xC02A) = (u32)x->y;
+    SETW(0xE55A, x->vs);
+    u16 alt = x->on_ground ? U(0xC0A2) : x->alt < U(0xC0A2) ? U(0xC0A2) : x->alt > 0xEA60 ? 0xEA60 : x->alt;
+    SETW(0x2DF6, alt);
+}
+
 /* 0000:1E9E sim_input_flight */
 void sim_input_flight(void)
 {
@@ -175,6 +208,10 @@ void sim_input_flight(void)
     flight_keys(U(0xDE90));
     if (U(0x2E02)) SETW(0x2E02, U(0x2E02) - 1);
     if (S(0x2DFE) != 0 && S(0xB170) == 0) snd_cue(0xB, 2);
+    u16 cm = (u16)fl_pilot_w(0x40);
+    FlExt ext;                                                            /* ENH: VR */
+    const bool ex = fl_ext_fm && fl_ext_fm(&ext);                         /* ENH: VR */
+    if (!ex) {                                                            /* ENH: VR */
 
     /* ---- stick (2.2) */
     if (comm_get()->input_devices & 1) joy_poll();
@@ -206,7 +243,6 @@ void sim_input_flight(void)
     }
 
     /* ---- buffet, flare assist (2.4) */
-    u16 cm = (u16)fl_pilot_w(0x40);
     s16 bp24 = cm != 0 ? (s16)(((s32)(s16)(500 - S(0x2DF4)) * S(0xB168)) >> 13) : 0;
     if (!(DSB(0x9B04) & 1)) bp24 = (s16)(bp24 + fx_clamp_wrap((s16)(S(0xB168) - 0xC8) >> 4, 0, 0x20));
     if (DSB(0x9B04) & 2) bp24 = (s16)(bp24 >> 1);
@@ -219,6 +255,7 @@ void sim_input_flight(void)
         s16 t = (s16)((s16)((s16)((s16)(S(0x98C6) - S(0x2DF0)) >> 3) - S(0x2DF4) + 0xC8) >> 3);
         if (t > 0) SETW(0xE446, fx_clamp_wrap(t, 0, 0x20));
     }
+    }                                                                     /* ENH: VR */
 
     /* ---- ejection sequence, throttle cap, engine, fuel (2.5) */
     s16 rate = fl_rate();
@@ -271,6 +308,9 @@ void sim_input_flight(void)
         SETW(0x3634, S(0x3634) + (s16)(ax - cxx - 2));
     }
     if (S(0x3634) <= 0) { SETW(0xB170, 0); SETW(0x3634, 0); }
+
+    s16 bp0c = S(0x2DF6);                                                 /* ENH: VR, read before the outside model's altitude goes in */
+    if (ex) { ext_state(&ext); goto touchdown; }                          /* ENH: VR */
 
     /* ---- G load (2.6) */
     int idx = ((u16)fl_abs16(S(0x2DF2)) & 0x7F00) >> 8;
@@ -364,7 +404,6 @@ void sim_input_flight(void)
     if (DSB(0x2DFB)) fm_mat_from_euler();
 
     /* ---- position, altitude, touch-down (2.9) */
-    s16 bp0c = S(0x2DF6);
     s16 vs = (s16)fx_mul15(U(0xB052) >> 4, fx_sin16(S(0x2DF0) - S(0x98C6)));
     SETW(0xE55A, vs);
     SETW(0x2DF6, U(0x2DF6) + vs / rate);
@@ -374,6 +413,7 @@ void sim_input_flight(void)
     DSL(0xC02A) = (u32)((s32)DSL(0xC02A) + v2 / 16 / rate);
     if (U(0x2DF6) > 0xF230 || U(0xC0A2) > U(0x2DF6)) SETW(0x2DF6, U(0xC0A2));
     if (U(0x2DF6) > 0xEA60) SETW(0x2DF6, 0xEA60);
+touchdown:;                                                               /* ENH: VR */
     u16 alt = U(0x2DF6);
     SETW(0x2DF4, alt < 0x2000 ? alt : alt < 0x4000 ? ((alt - 0x2000) >> 1) + 0x2000 : ((alt - 0x4000) >> 2) + 0x3000);
     if (U(0x2DF4) == U(0xC0A2)) {

@@ -569,6 +569,8 @@ static void compose_src_live(ComposeSrc *cs)
     }
 }
 
+u8 *enh_cls_out;   /* VR: the pixel classes of the presented canvas (lw x lh), for the headset's HUD and panel layers (vr/host_vr.c) */
+
 bool enh_compose_vga(u32 *xrgb)
 {
     static u8 idx[PAGE_PIXELS];
@@ -581,6 +583,7 @@ bool enh_compose_vga(u32 *xrgb)
     bool screen = vga_shown_frame(idx, sidx, pal);
     ComposeSrc cs;
     compose_src_live(&cs);                                            /* ENH: S3.4, with the wide picture */
+    cs.cls = enh_cls_out;                                             /* VR: */
     compose_canvas(xrgb, idx, sidx, pal, screen, &cs);
     if (last_px == px && last && !memcmp(last, xrgb, px * sizeof(u32))) return false;
     if (last_px != px) { free(last); last = malloc(px * sizeof(u32)); last_px = last ? px : 0; }

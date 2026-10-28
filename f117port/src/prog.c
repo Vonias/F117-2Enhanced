@@ -20,6 +20,7 @@
 
 #include <stdarg.h>
 #include <stdio.h>
+#include <stdlib.h>   /* VR: getenv (quick start) */
 #include <string.h>
 
 #include "comm.h"
@@ -107,6 +108,37 @@ void prog_comm_init(void)
     prog_log("[chain] F117.COM: comm block %04X:0000 (%u bytes), 0000:04F0 = %04X", comm_seg, COMM_SIZE, comm_seg);
 }
 
+#ifdef F117_VR
+/* VR: quick start, straight into the action. The comm block is START's whole hand-off to VGAME (HANDOFFS.md: theatre, weapons,
+ * night, the world blob, the pilot record; the only segments in it are F117.COM's, made again here). Each time START sends the
+ * pilot to fly, the block is kept in VRQUICK.BIN; with F117_QUICK=1 the next run restores it and goes from F117.COM's set-up to
+ * DSWAP 1 and VGAME, skipping SETUP, MPS_LOGO, PLAYER and START. After the mission the chain goes on as always (END, START). */
+static const char vr_quick_file[] = "VRQUICK.BIN";
+
+static void vr_quick_save(void)
+{
+    char *path = host_game_path(vr_quick_file, true);
+    FILE *f = path ? fopen(path, "wb") : NULL;
+    if (f) { fwrite(comm_get(), 1, COMM_SIZE, f); fclose(f); prog_log("[chain] VR: mission kept for quick start"); }
+    host_free(path);
+}
+
+static bool vr_quick_load(void)
+{
+    const char *q = getenv("F117_QUICK");
+    if (!q || *q != '1') return false;
+    char *path = host_game_path(vr_quick_file, false);
+    FILE *f = path ? fopen(path, "rb") : NULL;
+    host_free(path);
+    if (!f) return false;
+    u8 buf[COMM_SIZE];
+    bool ok = fread(buf, 1, COMM_SIZE, f) == COMM_SIZE;
+    fclose(f);
+    if (ok) memcpy(comm_get(), buf, COMM_SIZE);
+    return ok;
+}
+#endif
+
 static int chain_body(const char *f117_tail)
 {
     int runs = 0;
@@ -114,6 +146,20 @@ static int chain_body(const char *f117_tail)
 
     prog_comm_init();
 
+#ifdef F117_VR
+    bool quick = vr_quick_load();                                   /* VR: straight into the kept mission */
+    if (quick) {
+        u16 qpage = (u16)gfx_alloc(2);
+        comm_get()->seg_offscreen = qpage;
+        mode13_set();                                               /* MGRAPHIC slot 60: START leaves VGAME the screen in mode 13h */
+        wr16(0, COMM_INIT_DONE, 1);
+        if (snd_load_driver(comm_get()->snd_driver[0])) snd_init(0);
+        const char *night = getenv("F117_NIGHT");                   /* VR: the pilot's choice of day or night for the kept mission */
+        if (night) comm_get()->night = (u8)(*night == '1');         /* comm+33h: VGAME loads the night or the day palette from it */
+        prog_log("[chain] VR: quick start, the kept mission");
+        goto fly;
+    }
+#endif
     int setup = RUN(PROG_SETUP, f117_tail);
     if (setup != EXIT_SETUP_OK) { f117_quit(setup ? "SETUP did not return 24h" : "SETUP returned 0 (Esc)", setup == 0); return runs; }
     if (prog_abort) { f117_quit("aborted", false); return runs; }
@@ -145,9 +191,16 @@ static int chain_body(const char *f117_tail)
         int start = RUN(PROG_START, "");
         if (start == 0) { f117_quit("START returned 0", true); break; }
         if (prog_abort) { f117_quit("aborted", false); break; }
+#ifdef F117_VR
+        if (start == EXIT_START_FLY) vr_quick_save();               /* VR: */
+#endif
         if (RUN(PROG_DSWAP, " 1") == 0) { f117_quit("DSWAP 1 returned 0", false); break; }
         if (start == EXIT_START_FLY) RUN(PROG_PLAYER, " title-2");
         if (prog_abort) { f117_quit("aborted", false); break; }
+#ifdef F117_VR
+    fly:                                                            /* VR: quick start enters here */
+        if (quick) { quick = false; if (RUN(PROG_DSWAP, " 1") == 0) break; }
+#endif
         if (RUN(PROG_VGAME, "") == 0) { f117_quit("VGAME returned 0", true); break; }
         if (prog_abort) { f117_quit("aborted", false); break; }
         if (RUN(PROG_DSWAP, " 2") == 0) { f117_quit("DSWAP 2 returned 0", false); break; }

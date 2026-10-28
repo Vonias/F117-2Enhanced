@@ -1,7 +1,11 @@
 /* The sandboxed display pass (sandbox.h; DESIGN.md 4.1, 4.2, 4.7; S2.4). */
 #include "enhanced/sandbox.h"
 
+#ifdef F117_VR                 /* VR: the Quest build has no SDL */
+#include "vr/sdl_shim.h"
+#else
 #include <SDL3/SDL.h>
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

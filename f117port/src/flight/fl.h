@@ -25,6 +25,18 @@ static inline int fl_rand_n(int n) { s32 p = (s32)rand_fn() * (s16)n; return (s1
 /* comm word += n (far pointer DS:E548) */
 static inline void fl_comm_add(int off, int n) { u8 *p = (u8 *)comm_get() + off; u16 v = (u16)(p[0] | p[1] << 8); v = (u16)(v + n); p[0] = (u8)v; p[1] = (u8)(v >> 8); }
 
+/* ENH: VR, an outside flight model (vr/vr_fdm.c, the headset's JSBSim): when the hook is set and returns true, the player's aircraft takes
+ * this frame's state from it instead of the stick, lift and turn of 1E9E; engine, fuel, ejection, touch-down and the history stay the game's.
+ * In the game's units: x, y as BA10 / C02A, alt the true altitude as 2DF6 (feet), angles 10000h a turn, speed as B168 (knots),
+ * g16 as 98DC (G x 16), vs as E55A (ft/s, + up), aoa as 98C6 (the flight path below the nose), stall as E448. */
+typedef struct {
+    s32 x, y;
+    u16 alt, heading, pitch, roll;
+    s16 speed, g16, vs, aoa, stall;
+    bool on_ground, stick;
+} FlExt;
+extern bool (*fl_ext_fm)(FlExt *s);
+
 /* strcpy / strcat between DS offsets */
 void fl_strcpy(u16 dst, u16 src);
 void fl_strcat(u16 dst, u16 src);
